@@ -2,11 +2,15 @@
   "name": "youtube-clone-integrated",
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": ">=20.0.0" },
-  "scripts": { "start": "node server.js" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "express": "^4.19.2",
     "node-fetch": "^3.3.1",
-    "youtubei.js": "^16.0.0"   // ← 2026年1月時点の最新に近いバージョン
+    "youtubei.js": "^16.0.0"
   }
 }
