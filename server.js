@@ -1,9 +1,9 @@
-// server.js （統合版）
+// server.js （統合版 + Innertubeメイン対応）
 import express from "express";
 import fetch from "node-fetch";
 import { fileURLToPath } from "url";
 import path from "path";
-import { Innertube } from "youtubei.js";
+import { Innertube } from 'youtubei.js';
 import { execSync } from "child_process";
 
 const app = express();
@@ -11,37 +11,42 @@ const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 静的ファイル配信（index.html, watch.html などを直接配信）
-app.use(express.static(__dirname));  // ← これで /index.html, /watch.html が自動で配信される
-
-// YouTubeクライアント（使ってないなら削除可）
-let youtube;
+// Innertube グローバル初期化（アプリ起動時に1回だけ）
+let innertube;
 (async () => {
   try {
-    youtube = await Innertube.create();
-    console.log("YouTube InnerTube client ready");
-  } catch (e) {
-    console.warn("InnerTube init failed", e);
+    innertube = await Innertube.create({
+      // 2026年現在の推奨オプション（ドキュメントに基づく）
+      // retrieve_player: true,  ← 最新版ではデフォルトで扱われることが多く、明示不要の場合あり。ストリーミングが必要なら有効
+      // cache: new UniversalCache(false),  ← キャッシュはオプション。Node.jsサーバーではメモリキャッシュ有効がおすすめだが、UniversalCacheは最新版で非推奨/削除の可能性あり（READMEに記載なし）
+      // generate_session_locally: true,  ← セッションをローカル生成（推奨）
+      // client_type: 'WEB' など（デフォルトでOK）
+    });
+    console.log('Innertube ready!');
+  } catch (err) {
+    console.error('Innertube init failed:', err);
   }
 })();
 
-// ルートで index.html を返す（任意だがわかりやすい）
+// 静的ファイル配信（index.html / watch.html など）
+app.use(express.static(__dirname));
+
+// ルート → YouTube風UI
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// watch.html を明示的に（なくてもOK）
+// watch.html（オリジナルプレイヤー）
 app.get("/watch.html", (req, res) => {
   res.sendFile(path.join(__dirname, "watch.html"));
 });
 
-// ★ yt-dlp で署名付きURLを取得（オリジナルプレイヤー用）
+// yt-dlp エンドポイント（オリジナルプレイヤー用署名URL取得）
 app.get("/video", async (req, res) => {
   const videoId = req.query.id;
   if (!videoId) return res.status(400).json({ error: "video id required" });
 
   try {
-    // yt-dlpコマンド（あなたの元コードをほぼそのまま）
     const output = execSync(
       `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --sleep-requests 1 --user-agent "Mozilla/5.0" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]" https://youtu.be/${videoId}`
     ).toString().trim().split("\n");
@@ -67,7 +72,7 @@ app.get("/video", async (req, res) => {
   }
 });
 
-// プロキシ（動画チャンク配信用） ← 重要！これがないと403エラー多発
+// プロキシ（googlevideo.comのチャンク回避用）
 app.get("/proxy", async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send("URL required");
@@ -75,10 +80,7 @@ app.get("/proxy", async (req, res) => {
   const range = req.headers.range || "bytes=0-";
 
   try {
-    const response = await fetch(url, {
-      headers: { Range: range }
-    });
-
+    const response = await fetch(url, { headers: { Range: range } });
     const headers = {
       "Content-Type": response.headers.get("content-type") || "video/mp4",
       "Accept-Ranges": "bytes",
@@ -94,7 +96,7 @@ app.get("/proxy", async (req, res) => {
   }
 });
 
-// HLS用プロキシ（必要なら拡張）
+// HLSプロキシ（必要に応じて）
 app.get("/proxy-hls", async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).send("URL required");
@@ -103,7 +105,6 @@ app.get("/proxy-hls", async (req, res) => {
     const r = await fetch(url);
     let text = await r.text();
 
-    // m3u8内のURLを /proxy にリライト
     text = text.replace(
       /(https?:\/\/[^\s]+)/g,
       (m) => m.includes("googlevideo.com") ? `/proxy?url=${encodeURIComponent(m)}` : m
