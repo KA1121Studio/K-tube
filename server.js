@@ -273,12 +273,12 @@ app.get('/api/search', async (req, res) => {
 });
 
 // 動画詳細 + 関連 + チャンネル情報
-app.get('/api/video/:id', async (req, res) => {
+app.get("/api/video/:id", async (req, res) => {
   const id = req.params.id;
   try {
     const info = await innertube.getInfo(id);
     res.json({
-      title: info.title?.text || '',
+      title: info.title?.text || info.title || '',
       description: info.description || '',
       viewCount: info.view_count?.text?.replace(/[^0-9]/g, '') || '0',
       published: info.published?.text || '',
@@ -288,16 +288,10 @@ app.get('/api/video/:id', async (req, res) => {
         name: info.author?.name || '',
         thumbnails: info.author?.thumbnails || [],
         subscriberCount: info.author?.subscriber_count?.text?.replace(/[^0-9]/g, '') || '0'
-      },
-      related: (info.related_videos || []).map(v => ({
-        id: v.id,
-        title: v.title?.text || '',
-        author: v.author?.name || '',
-        thumbnails: v.thumbnails || [],
-        viewCount: v.view_count?.text?.replace(/[^0-9]/g, '') || '0'
-      }))
+      }
     });
   } catch (err) {
+    console.error("Video info error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
