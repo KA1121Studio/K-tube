@@ -125,27 +125,26 @@ app.get("/proxy-hls", async (req, res) => {
 // Innertubeを使った新しいAPIエンドポイント（公式APIの置き換え）
 
 // ホーム画面の人気動画（Trending）
-// おすすめ画面用エンドポイント（/api/popular または /api/trending として）
 app.get("/api/popular", async (req, res) => {
   if (!innertube) return res.status(503).json({ error: "Innertube not ready" });
   try {
-    // getTrending() をやめて、browse() で直接おすすめフィードを取得
+    // getTrending() を諦めて、browse() で「おすすめ」フィードを取得
     const response = await innertube.actions.browse({
-      browseId: 'FEwhat_to_watch',  // YouTubeの「おすすめ」フィード（ホーム画面相当）
-      params: ''  // パラメータ空でシンプルに（これで400回避しやすい）
+      browseId: 'FEwhat_to_watch',  // ← これ！（YouTubeホームのおすすめ動画フィード）
+      params: ''  // 空でシンプルに（400回避）
     });
 
-    // レスポンスから動画リストを抽出（2026年現在のrichGridRenderer構造）
-    const gridContents = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.richGridRenderer?.contents || [];
-    const videos = gridContents
-      .filter(item => item.richItemRenderer?.content?.videoRenderer)  // 動画のみフィルタ
+    // レスポンス構造を2026年現在のrichGridRendererに合わせる
+    const grid = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.richGridRenderer?.contents || [];
+    const videos = grid
+      .filter(item => item.richItemRenderer?.content?.videoRenderer)
       .map(item => item.richItemRenderer.content.videoRenderer);
 
     res.json({
       items: videos.slice(0, 12).map(v => ({
         id: v.videoId,
         snippet: {
-          title: v.title?.runs?.[0]?.text || v.title?.simpleText || '',
+          title: v.title?.runs?.[0]?.text || v.title?.simpleText || '不明',
           channelId: v.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '',
           channelTitle: v.ownerText?.runs?.[0]?.text || v.ownerText?.simpleText || '不明',
           thumbnails: { medium: { url: v.thumbnail?.thumbnails?.slice(-1)[0]?.url || '' } },
@@ -159,7 +158,7 @@ app.get("/api/popular", async (req, res) => {
       nextPageToken: response.onResponseReceivedCommands?.[0]?.appendContinuationItemsAction?.continuationItem?.continuationEndpoint?.continuationCommand?.token || null
     });
   } catch (err) {
-    console.error("Popular browse error:", err.message, err.stack || err);
+    console.error("Popular error details:", err.message, err.stack || err);
     res.status(500).json({ error: err.message });
   }
 });
