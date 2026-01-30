@@ -18,15 +18,16 @@ let innertube;
     innertube = await Innertube.create({
       client_options: {
         clientName: 'WEB',
-        clientVersion: '2.20260101.01.00',  // ← 2026年1月現在の有効なバージョンを入れる（下記で確認方法）
+        clientVersion: '2.20260128.05.00',  // ← これをセット！
         hl: 'ja',
         gl: 'JP',
-        utcOffsetMinutes: 540  // 日本時間
+        utcOffsetMinutes: 540,  // 日本時間 +9時間
+        userInterfaceTheme: 'USER_INTERFACE_THEME_LIGHT'
       },
-      generate_session_locally: true,  // セッションをローカル生成（必須）
-      retrieve_player: false  // 動画プレイヤー情報不要ならオフで軽く
+      generate_session_locally: true,
+      retrieve_player: false
     });
-    console.log('Innertube ready with custom client!');
+    console.log('Innertube ready with clientVersion 2.20260128.05.00!');
   } catch (err) {
     console.error('Innertube init failed:', err);
   }
