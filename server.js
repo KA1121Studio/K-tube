@@ -205,6 +205,136 @@ app.get("/api/related", async (req, res) => {
   }
 });
 
+// ── Innertube API エンドポイント ──
+
+// ホーム: トレンド動画
+app.get('/api/trending', async (req, res) => {
+  if (!innertube) return res.status(503).json({ error: 'Innertube not ready' });
+  try {
+    const trending = await innertube.getTrending();
+    const videos = trending.videos || [];
+    res.json({
+      items: videos.map(v => ({
+        id: v.id,
+        snippet: {
+          title: v.title?.text || '',
+          channelId: v.author?.id || '',
+          channelTitle: v.author?.name || '',
+          thumbnails: { medium: { url: v.thumbnails?.[v.thumbnails.length - 1]?.url || '' } },
+          publishedAt: v.published?.text || ''
+        },
+        statistics: { viewCount: v.view_count?.text?.replace(/[^0-9]/g, '') || '0' }
+      })),
+      nextPageToken: trending.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 検索
+app.get('/api/search', async (req, res) => {
+  const q = req.query.q;
+  const continuation = req.query.continuation;
+  if (!q) return res.status(400).json({ error: 'query required' });
+
+  try {
+    const search = await innertube.search(q, { type: 'video', continuation });
+    res.json({
+      items: (search.videos || []).map(v => ({
+        id: { videoId: v.id },
+        snippet: {
+          title: v.title?.text || '',
+          channelId: v.author?.id || '',
+          channelTitle: v.author?.name || '',
+          thumbnails: { medium: { url: v.thumbnails?.[v.thumbnails.length - 1]?.url || '' } }
+        }
+      })),
+      nextPageToken: search.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 動画詳細 + 関連 + チャンネル情報
+app.get('/api/video/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const info = await innertube.getInfo(id);
+    res.json({
+      title: info.title?.text || '',
+      description: info.description || '',
+      viewCount: info.view_count?.text?.replace(/[^0-9]/g, '') || '0',
+      published: info.published?.text || '',
+      likeCount: info.like_count?.text?.replace(/[^0-9]/g, '') || '0',
+      channel: {
+        id: info.author?.id || '',
+        name: info.author?.name || '',
+        thumbnails: info.author?.thumbnails || [],
+        subscriberCount: info.author?.subscriber_count?.text?.replace(/[^0-9]/g, '') || '0'
+      },
+      related: (info.related_videos || []).map(v => ({
+        id: v.id,
+        title: v.title?.text || '',
+        author: v.author?.name || '',
+        thumbnails: v.thumbnails || [],
+        viewCount: v.view_count?.text?.replace(/[^0-9]/g, '') || '0'
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// コメント
+app.get('/api/comments/:videoId', async (req, res) => {
+  const videoId = req.params.videoId;
+  const continuation = req.query.continuation;
+  try {
+    const comments = await innertube.getComments(videoId, { continuation });
+    res.json({
+      comments: (comments.comments || []).map(c => ({
+        author: {
+          name: c.author?.name || '匿名',
+          thumbnails: c.author?.thumbnails || []
+        },
+        content: c.content?.text || '',
+        published: c.published?.text || ''
+      })),
+      nextContinuation: comments.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// チャンネル情報 + 動画一覧（簡易）
+app.get('/api/channel/:channelId', async (req, res) => {
+  const channelId = req.params.channelId;
+  const continuation = req.query.continuation;
+  try {
+    const channel = await innertube.getChannel(channelId);
+    const videos = await channel.getVideos({ continuation });
+    res.json({
+      title: channel.header?.title?.text || channel.metadata?.title || '',
+      description: channel.metadata?.description || '',
+      avatar: channel.avatar?.thumbnails?.[channel.avatar.thumbnails.length - 1]?.url || '',
+      subscribers: channel.metadata?.subscribers?.text?.replace(/[^0-9]/g, '') || '0',
+      videos: (videos.videos || []).map(v => ({
+        id: v.id,
+        title: v.title?.text || '',
+        thumbnails: { medium: { url: v.thumbnails?.[v.thumbnails.length - 1]?.url || '' } },
+        publishedAt: v.published?.text || '',
+        viewCount: v.view_count?.text?.replace(/[^0-9]/g, '') || '0'
+      })),
+      nextContinuation: videos.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
