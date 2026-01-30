@@ -117,6 +117,94 @@ app.get("/proxy-hls", async (req, res) => {
   }
 });
 
+// Innertubeを使った新しいAPIエンドポイント（公式APIの置き換え）
+
+// ホーム画面の人気動画（Trending）
+app.get("/api/popular", async (req, res) => {
+  if (!innertube) return res.status(503).json({ error: "Innertube not ready" });
+  try {
+    const trending = await innertube.getTrending(); // 日本向けトレンド動画
+    const videos = trending.videos.slice(0, 12); // 最大12件
+
+    res.json({
+      items: videos.map(v => ({
+        id: v.id,
+        snippet: {
+          title: v.title.text,
+          channelTitle: v.author?.name || "Unknown",
+          channelId: v.author?.id || "",
+          thumbnails: { medium: { url: v.thumbnails[0]?.url || "" } },
+          publishedAt: v.published?.text || new Date().toISOString()
+        },
+        statistics: {
+          viewCount: v.view_count?.text?.replace(/\D/g, '') || "0"
+        }
+      })),
+      nextPageToken: trending.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    console.error("Popular error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 検索機能
+app.get("/api/search", async (req, res) => {
+  const q = req.query.q;
+  const pageToken = req.query.pageToken;
+  if (!q) return res.status(400).json({ error: "query required" });
+
+  if (!innertube) return res.status(503).json({ error: "Innertube not ready" });
+
+  try {
+    const search = await innertube.search(q, {
+      type: 'video',
+      continuation: pageToken || undefined
+    });
+
+    res.json({
+      items: search.videos.map(v => ({
+        id: { videoId: v.id },
+        snippet: {
+          title: v.title.text,
+          channelTitle: v.author?.name || "",
+          channelId: v.author?.id || "",
+          thumbnails: { medium: { url: v.thumbnails[0]?.url || "" } }
+        }
+      })),
+      nextPageToken: search.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 関連動画
+app.get("/api/related", async (req, res) => {
+  const videoId = req.query.id;
+  if (!videoId) return res.status(400).json({ error: "video id required" });
+
+  if (!innertube) return res.status(503).json({ error: "Innertube not ready" });
+
+  try {
+    const info = await innertube.getInfo(videoId);
+    const related = info.related_videos || [];
+
+    res.json({
+      items: related.map(v => ({
+        id: { videoId: v.id },
+        snippet: {
+          title: v.title.text,
+          channelTitle: v.author?.name || "",
+          thumbnails: { medium: { url: v.thumbnails[0]?.url || "" } }
+        }
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
