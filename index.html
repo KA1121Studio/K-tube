@@ -1,5 +1,3 @@
-
-
 <!doctype html>
 <html lang="ja">
 <head>
@@ -9,7 +7,6 @@
 <link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/1/19/Google_Classroom_Logo.svg">
 <link rel="preconnect" href="https://teaching-materials-r4zf.onrender.com">
 <link rel="dns-prefetch" href="https://teaching-materials-r4zf.onrender.com">
-
 <style>
   /* --- 既存のCSSはここにそのまま --- */
   *{box-sizing:border-box}
@@ -69,7 +66,6 @@
 </style>
 </head>
 <body>
-
     <header>
       <div class="logo" id="homeBtn" title="Home">
         <div class="icon">Y</div>
@@ -86,510 +82,458 @@
       <div class="content" id="app"></div>
     </main>
     <script>
-      /* ここに元のJavaScriptコード全部をそのまま入れる */
-/*
-  YouTube風シングルファイルデモ（複数APIキー対応）
-  使い方:
-    1) 下の API_KEYS を自分のキーに置き換え（少なくとも1つ入れる）
-    2) ローカルで開く場合は必ずローカルサーバー（例: python -m http.server）で起動
-    3) 動作: ホーム（popular） / 検索 / 動画再生（#watch=VIDEOID） / チャンネル（#channel=CHANNELID）
-*/
+      /* YouTube風シングルファイルデモ（Innertubeサーバーサイド版） */
+      const MAX_RESULTS = 12;
+      const el = id => document.getElementById(id);
+      const app = el('app');
+      const searchInput = el('searchInput');
+      const homeBtn = el('homeBtn');
+      let channelThumbCache = {};  // 1つだけ宣言
+      let nextPageTokenHome = null;
+      let homeLoading = false;
+      let homeQuery = null;
+      let observerMap = new Map();
+      function fmtNum(n){
+        if(n==null) return '';
+        n = Number(n);
+        if(n>=1e9) return (n/1e9).toFixed(1)+'B';
+        if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+        if(n>=1e3) return (n/1e3).toFixed(1)+'K';
+        return String(n);
+      }
+      function timeAgo(iso){
+        const d = new Date(iso);
+        const s = Math.floor((Date.now()-d.getTime())/1000);
+        if(s<60) return s + '秒前';
+        if(s<3600) return Math.floor(s/60)+'分前';
+        if(s<86400) return Math.floor(s/3600)+'時間前';
+        if(s<2592000) return Math.floor(s/86400)+'日前';
+        if(s<31536000) return Math.floor(s/2592000)+'ヶ月前';
+        return Math.floor(s/31536000)+'年以上前';
+      }
 
-/// --- 変更: 複数APIキー対応 ---
-const API_KEYS = [
-  'AIzaSyCHjVL925rnYBluF3MoHGdT0In1YH0F55s',
-  'AIzaSyCN8NAC6kTbjfZvtGzPzLNnfwRMyeNIYdE',
-  'AIzaSyC2kT3DmcKFuXJTddbUEQxFwUFPfxqW_iQ',
-  'AIzaSyCogj_NUn2zVM3J64JTnwp0Aoe50NtQf0I',
-  'AIzaSyBC-EmMsqeZkws0Sna5YVF3gjS_5Zj_g1w'
-];
-
-let keyIndex = 0;
-/// --- /変更 ---
-
-const MAX_RESULTS = 12;
-
-const el = id => document.getElementById(id);
-const app = el('app');
-const searchInput = el('searchInput');
-const homeBtn = el('homeBtn');
-
-
-let nextPageTokenHome = null;
-let homeLoading = false;
-let homeQuery = null;
-let observerMap = new Map();
-
-function fmtNum(n){
-  if(n==null) return '';
-  n = Number(n);
-  if(n>=1e9) return (n/1e9).toFixed(1)+'B';
-  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
-  if(n>=1e3) return (n/1e3).toFixed(1)+'K';
-  return String(n);
-}
-function timeAgo(iso){
-  const d = new Date(iso);
-  const s = Math.floor((Date.now()-d.getTime())/1000);
-  if(s<60) return s + '秒前';
-  if(s<3600) return Math.floor(s/60)+'分前';
-  if(s<86400) return Math.floor(s/3600)+'時間前';
-  if(s<2592000) return Math.floor(s/86400)+'日前';
-  if(s<31536000) return Math.floor(s/2592000)+'ヶ月前';
-  return Math.floor(s/31536000)+'年以上前';
-}
-
-// --- Innertube ヘルパー（必要最小限） ---
-// チャンネルサムネキャッシュ（そのまま）
-let channelThumbCache = {};
-
-// Innertube がグローバル変数として使える前提（server.js で初期化済み）
-
-// チャンネルサムネ取得（Innertube で置き換え）
-async function getChannelThumb(channelId) {
-  if (channelThumbCache[channelId]) return channelThumbCache[channelId];
-  try {
-    // Innertube でチャンネル情報取得
-    const channel = await innertube.getChannel(channelId);
-    const thumb = channel.avatar?.thumbnails?.[0]?.url || channel.header?.thumbnails?.[0]?.url || '';
-    channelThumbCache[channelId] = thumb;
-    return thumb;
-  } catch (e) {
-    console.warn('channel thumb failed', e);
-    return '';
-  }
-}
-
-// --- ルーティング --- （変更なし）
-window.addEventListener('hashchange', renderByHash);
-homeBtn.addEventListener('click', () => { location.hash = ''; });
-searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { performSearch(searchInput.value.trim()); }
-});
-// 初期表示
-renderByHash();
-
-function renderByHash() {
-  const h = location.hash.slice(1);
-  if (!h) { renderHome(); return; }
-  const [k, v] = h.split('=');
-  if (k === 'watch') return renderWatch(v);
-  if (k === 'channel') return renderChannel(v);
-  if (k === 'search') {
-    searchInput.value = decodeURIComponent(v || '');
-    performSearch(decodeURIComponent(v || ''));
-    return;
-  }
-  renderHome();
-}
-
-/* -------------------- ホーム（人気/おすすめ） -------------------- */
-function renderHome() {
-  app.innerHTML = `
-    <section id="homeSection">
-      <div style="margin:12px 0;font-weight:700;font-size:18px">おすすめ</div>
-      <div class="video-grid" id="videoGrid"></div>
-      <div id="homeSentinel" style="height:32px"></div>
-    </section>
-  `;
-  nextPageTokenHome = null;
-  homeQuery = null;
-  setupHomeInfinite();
-  loadHome();
-}
-
-async function loadHome() {
-  if (homeLoading) return;
-  homeLoading = true;
-  const grid = el('videoGrid');
-  try {
-    if (!innertube) throw new Error('Innertube not initialized');
-
-    const trending = await innertube.getTrending();  // トレンド取得（デフォルトでJP設定済みならOK）
-    const videos = trending.videos || [];  // 動画リスト
-
-    nextPageTokenHome = trending.continuations?.next_continuation_token || null;
-
-    for (const raw of videos.slice(0, MAX_RESULTS)) {
-      // Innertube → 公式API互換形式に整形
-      const item = {
-        id: raw.id,
-        snippet: {
-          title: raw.title?.text || '',
-          channelId: raw.author?.id || '',
-          channelTitle: raw.author?.name || '',
-          thumbnails: { medium: { url: raw.thumbnails?.[raw.thumbnails.length - 1]?.url || '' } },
-          publishedAt: raw.published?.text || new Date().toISOString()
-        },
-        statistics: {
-          viewCount: raw.view_count?.text?.replace(/[^0-9]/g, '') || '0'
+      // --- チャンネルサムネキャッシュ（サーバー経由） ---
+      async function getChannelThumb(channelId){
+        if (channelThumbCache[channelId]) return channelThumbCache[channelId];
+        try {
+          const res = await fetch(`/api/channel/${channelId}`);
+          if (!res.ok) throw new Error('Fetch failed');
+          const data = await res.json();
+          const thumb = data.avatar || '';
+          channelThumbCache[channelId] = thumb;
+          return thumb;
+        } catch (e) {
+          console.warn('channel thumb failed', e);
+          return '';
         }
-      };
-      const card = await makeVideoCard(item);
-      grid.appendChild(card);
-    }
-  } catch (e) {
-    console.error(e);
-    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
-  } finally {
-    homeLoading = false;
-  }
-}
+      }
 
-// makeVideoCard はそのまま（整形済みitemで動く）
-
-function setupHomeInfinite() {
-  const sentinel = el('homeSentinel');
-  if (!sentinel) return;
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(ent => {
-      if (ent.isIntersecting) loadHome();
-    });
-  }, { rootMargin: '400px' });
-  io.observe(sentinel);
-  observerMap.set('home', io);
-}
-
-/* -------------------- 検索機能 -------------------- */
-async function performSearch(q) {
-  if (!q) return renderHome();
-  location.hash = `search=${encodeURIComponent(q)}`;
-  app.innerHTML = `
-    <section>
-      <div style="margin:12px 0;font-weight:700;font-size:18px">検索結果: ${escapeHtml(q)}</div>
-      <div class="video-grid" id="videoGrid"></div>
-      <div id="searchSentinel" style="height:32px"></div>
-    </section>
-  `;
-  const grid = el('videoGrid');
-  let nextPage = null;
-  let loading = false;
-
-  const loadMore = async () => {
-    if (loading) return;
-    loading = true;
-    try {
-      if (!innertube) throw new Error('Innertube not initialized');
-
-      const searchRes = await innertube.search(q, {
-        type: 'video',
-        continuation: nextPage || undefined
+      // --- ルーティング --- 
+      window.addEventListener('hashchange', renderByHash);
+      homeBtn.addEventListener('click', () => { location.hash = ''; });
+      searchInput.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter'){ performSearch(searchInput.value.trim()); }
       });
+      // 初期表示
+      renderByHash();
 
-      nextPage = searchRes.continuations?.next_continuation_token || null;
+      function renderByHash(){
+        const h = location.hash.slice(1);
+        if(!h) { renderHome(); return; }
+        const [k,v] = h.split('=');
+        if(k==='watch') return renderWatch(v);
+        if(k==='channel') return renderChannel(v);
+        if(k==='search') {
+          searchInput.value = decodeURIComponent(v||'');
+          performSearch(decodeURIComponent(v||''));
+          return;
+        }
+        renderHome();
+      }
 
-      for (const raw of searchRes.videos || []) {
-        const item = {
-          id: raw.id,
-          snippet: {
-            title: raw.title?.text || '',
-            channelId: raw.author?.id || '',
-            channelTitle: raw.author?.name || '',
-            thumbnails: { medium: { url: raw.thumbnails?.[raw.thumbnails.length - 1]?.url || '' } }
+      /* -------------------- ホーム（人気/おすすめ） -------------------- */
+      function renderHome(){
+        app.innerHTML = `
+          <section id="homeSection">
+            <div style="margin:12px 0;font-weight:700;font-size:18px">おすすめ</div>
+            <div class="video-grid" id="videoGrid"></div>
+            <div id="homeSentinel" style="height:32px"></div>
+          </section>
+        `;
+        nextPageTokenHome = null;
+        homeQuery = null;
+        setupHomeInfinite();
+        loadHome();
+      }
+
+      async function loadHome(){
+        if(homeLoading) return;
+        homeLoading = true;
+        const grid = el('videoGrid');
+        try{
+          const res = await fetch('/api/trending');
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          nextPageTokenHome = data.nextPageToken || null;
+          for(const item of data.items || []){
+            const card = await makeVideoCard(item);
+            grid.appendChild(card);
           }
-        };
-        const card = await makeVideoCard(item);
-        grid.appendChild(card);
+        }catch(e){
+          console.error(e);
+          grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
+        } finally {
+          homeLoading = false;
+        }
       }
-    } catch (e) {
-      console.error('search error', e);
-      grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
-    } finally {
-      loading = false;
-    }
-  };
 
-  const sentinel = el('searchSentinel');
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(ent => {
-      if (ent.isIntersecting) loadMore();
-    });
-  }, { rootMargin: '400px' });
-  io.observe(sentinel);
-  observerMap.set('search', io);
-  loadMore();
-}
-
-/* -------------------- 動画再生画面 -------------------- */
-async function renderWatch(videoId) {
-  observerMap.forEach(o => o.disconnect());
-  observerMap.clear();
-  app.innerHTML = `<div>読み込み中...</div>`;
-
-  try {
-    if (!innertube) throw new Error('Innertube not initialized');
-
-    const info = await innertube.getInfo(videoId);
-    if (!info) throw new Error('動画が見つからない');
-
-    const title = info.title?.text || '';
-    const description = info.description || '';
-    const viewCount = info.view_count?.text?.replace(/[^0-9]/g, '') || '0';
-    const published = info.published?.text || '';
-    const likeCount = info.like_count?.text?.replace(/[^0-9]/g, '') || '0';
-    const channel = info.author || {};
-    const chId = channel.id || '';
-    const chTitle = channel.name || '';
-    const chThumb = channel.thumbnails?.[0]?.url || '';
-    const chSubs = channel.subscriber_count?.text?.replace(/[^0-9]/g, '') || '0';
-
-    app.innerHTML = `
-      <div class="watch-container">
-        <div class="main-col">
-          <div class="player-box">
-            <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
-          </div>
-          <div class="player-meta">
-            <h1>${escapeHtml(title)}</h1>
-            <div class="stats">
-              <div>${fmtNum(viewCount)} 回視聴</div>
-              <div>・</div>
-              <div>${timeAgo(published)}</div>
-              <div style="margin-left:auto;font-weight:700">
-                ${fmtNum(likeCount)} 👍
-              </div>
-              <select id="playerSelect" style="margin-left:8px">
-                <option value="official" selected>公式プレイヤー</option>
-                <option value="original">オリジナルプレイヤー</option>
-              </select>
-            </div>
-            <div class="channel-row">
-              <img src="${chThumb}" alt="">
-              <div class="ch-info">
-                <div style="font-weight:700">
-                  <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
-                    ${escapeHtml(chTitle)}
-                  </a>
-                </div>
-                <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
-              </div>
-              <div class="btn-sub">登録</div>
-            </div>
-            <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length > 600 ? '…' : ''}</div>
-            <div class="comments" id="commentsArea">
-              <h3 style="margin-top:12px">コメント</h3>
-              <div id="commentsList"></div>
-              <div id="commentsSentinel" style="height:32px"></div>
-            </div>
-          </div>
-        </div>
-        <aside class="side-col">
-          <div style="font-weight:700;margin-bottom:8px">次に再生</div>
-          <div id="relatedList"></div>
-        </aside>
-      </div>
-    `;
-
-    const watchChLink = app.querySelector('.watch-ch-link');
-    if (watchChLink) {
-      watchChLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        location.hash = `channel=${chId}`;
-      });
-    }
-
-    setupComments(videoId);
-    loadRelated(videoId);
-
-    const playerSelect = document.getElementById('playerSelect');
-    const iframe = document.getElementById('videoIframe');
-    playerSelect.addEventListener('change', () => {
-      if (playerSelect.value === 'official') {
-        iframe.src = `https://www.youtube.com/embed/${videoId}`;
-      } else {
-        iframe.src = `/watch.html?id=${videoId}`;
-      }
-    });
-  } catch (e) {
-    app.innerHTML = `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
-  }
-}
-
-async function loadRelated(videoId) {
-  const container = document.getElementById('relatedList');
-  container.innerHTML = '<div>読み込み中…</div>';
-
-  try {
-    if (!innertube) throw new Error('Innertube not initialized');
-
-    const info = await innertube.getInfo(videoId);
-    const related = info.related_videos || info.recommendations || [];
-
-    container.innerHTML = '';
-    if (related.length === 0) {
-      container.innerHTML = '<div style="color:#606060">関連動画が見つからない</div>';
-      return;
-    }
-
-    for (const raw of related) {
-      const div = document.createElement('div');
-      div.className = 'related-item';
-      div.innerHTML = `
-        <div class="related-thumb"><img src="${raw.thumbnails?.[raw.thumbnails.length - 1]?.url || ''}" alt=""></div>
-        <div class="related-info">
-          <div class="title">${escapeHtml(raw.title?.text || '')}</div>
-          <div style="color:#606060;font-size:13px">${escapeHtml(raw.author?.name || '')} ・ ${fmtNum(raw.view_count?.text?.replace(/[^0-9]/g, '') || '0')} 回</div>
-        </div>
-      `;
-      div.addEventListener('click', () => location.hash = `watch=${raw.id}`);
-      container.appendChild(div);
-    }
-  } catch (e) {
-    container.innerHTML = '<div style="color:#c00">関連動画取得失敗</div>';
-  }
-}
-
-/* -------------------- コメント（無限読み込み） -------------------- */
-let commentsPageToken = {};
-async function setupComments(videoId) {
-  const list = document.getElementById('commentsList');
-  list.innerHTML = '';
-  commentsPageToken[videoId] = null;
-  let loading = false;
-
-  const loadMore = async () => {
-    if (loading) return;
-    loading = true;
-    try {
-      if (!innertube) throw new Error('Innertube not initialized');
-
-      const options = { continuation: commentsPageToken[videoId] || undefined };
-      const commentsData = await innertube.getComments(videoId, options);
-
-      commentsPageToken[videoId] = commentsData.continuations?.next_continuation_token || null;
-
-      for (const comment of commentsData.comments || []) {
-        const author = comment.author || {};
-        const content = comment.content?.text || '';
-        const published = comment.published?.text || '';
-
+      async function makeVideoCard(item){
+        const vid = item.id;
+        const sn = item.snippet || {};
+        const th = sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url || '';
+        const title = sn.title || '';
+        const chId = sn.channelId;
+        const chTitle = sn.channelTitle || '';
+        const views = item.statistics?.viewCount || '';
+        const publishedAt = sn.publishedAt || '';
+        const channelThumb = await getChannelThumb(chId);
         const div = document.createElement('div');
-        div.className = 'comment';
+        div.className = 'card';
         div.innerHTML = `
-          <img src="${author.thumbnails?.[0]?.url || ''}" alt="">
-          <div class="c-body">
-            <div class="name">${escapeHtml(author.name || '匿名')} ・ <span style="color:#606060;font-size:12px">${timeAgo(published)}</span></div>
-            <div class="text">${escapeHtml(content)}</div>
+          <div class="thumb" data-vid="${vid}">
+            <img src="${th}" alt="">
+          </div>
+          <div class="meta">
+            <div class="channel-thumb"><img src="${channelThumb}" alt=""></div>
+            <div class="info">
+              <div class="title">${escapeHtml(title)}</div>
+              <div class="sub">
+                <a href="#channel=${chId}" data-channel="${chId}" class="ch-link">${escapeHtml(chTitle)}</a>
+                ・ ${fmtNum(views)} 回視聴 ・ ${timeAgo(publishedAt)}
+              </div>
+            </div>
           </div>
         `;
-        list.appendChild(div);
+        div.querySelector('.thumb').addEventListener('click', () => {
+          location.hash = `watch=${vid}`;
+        });
+        div.querySelector('.ch-link').addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          location.hash = `channel=${chId}`;
+        });
+        return div;
       }
 
-      if (!commentsData.comments?.length && !list.innerHTML) {
-        list.innerHTML = '<div style="color:#606060">コメントが存在しないか、非表示</div>';
+      function setupHomeInfinite(){
+        const sentinel = el('homeSentinel');
+        if(!sentinel) return;
+        const io = new IntersectionObserver(entries=>{
+          entries.forEach(ent=>{
+            if(ent.isIntersecting) loadHome();
+          });
+        }, {rootMargin:'400px'});
+        io.observe(sentinel);
+        observerMap.set('home', io);
       }
-    } catch (e) {
-      console.error('comments error', e);
-      list.innerHTML += `<div style="color:#c00">コメントの読み込みに失敗</div>`;
-    } finally {
-      loading = false;
-    }
-  };
 
-  const sentinel = el('commentsSentinel');
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(ent => {
-      if (ent.isIntersecting) loadMore();
-    });
-  }, { rootMargin: '400px' });
-  io.observe(sentinel);
-  observerMap.set('comments_' + videoId, io);
-  loadMore();
-}
+      /* -------------------- 検索機能 -------------------- */
+      async function performSearch(q){
+        if(!q) return renderHome();
+        location.hash = `search=${encodeURIComponent(q)}`;
+        app.innerHTML = `
+          <section>
+            <div style="margin:12px 0;font-weight:700;font-size:18px">検索結果: ${escapeHtml(q)}</div>
+            <div class="video-grid" id="videoGrid"></div>
+            <div id="searchSentinel" style="height:32px"></div>
+          </section>
+        `;
+        const grid = el('videoGrid');
+        let nextPage = null;
+        let loading = false;
+        const loadMore = async () => {
+          if(loading) return;
+          loading = true;
+          try{
+            const url = `/api/search?q=${encodeURIComponent(q)}${nextPage ? `&continuation=${nextPage}` : ''}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            nextPage = data.nextPageToken || null;
+            for(const item of data.items || []) {
+              const card = await makeVideoCard({
+                id: item.id.videoId,
+                snippet: item.snippet,
+                statistics: {}  // 検索時はstatisticsなしの場合があるので空
+              });
+              grid.appendChild(card);
+            }
+          }catch(e){
+            console.error('search error',e);
+            grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
+          } finally {
+            loading = false;
+          }
+        };
+        // IntersectionObserver で無限スクロール
+        const sentinel = el('searchSentinel');
+        const io = new IntersectionObserver(entries=>{
+          entries.forEach(ent=>{
+            if(ent.isIntersecting) loadMore();
+          });
+        }, {rootMargin:'400px'});
+        io.observe(sentinel);
+        observerMap.set('search', io);
+        loadMore();
+      }
 
-/* -------------------- チャンネルページ（簡易） -------------------- */
-async function renderChannel(channelId) {
-  app.innerHTML = `<div>チャンネル読み込み中…</div>`;
-  try {
-    if (!innertube) throw new Error('Innertube not initialized');
+      /* -------------------- 動画再生画面 -------------------- */
+      async function renderWatch(videoId){
+        // 既存オブザーバーは停止
+        observerMap.forEach((o)=>o.disconnect());
+        observerMap.clear();
+        app.innerHTML = `<div>読み込み中...</div>`;
+        try{
+          const res = await fetch(`/api/video/${videoId}`);
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          if(!data) throw new Error('動画が見つからない');
+          const sn = { title: data.title, description: data.description, publishedAt: data.published };
+          const stats = { viewCount: data.viewCount, likeCount: data.likeCount };
+          const chId = data.channel.id;
+          const chItem = { snippet: { title: data.channel.name, thumbnails: { default: { url: data.channel.thumbnails[0]?.url || '' } } }, statistics: { subscriberCount: data.channel.subscriberCount } };
+          // コメント（最初のページ）
+          // 関連動画
+          app.innerHTML = `
+            <div class="watch-container">
+              <div class="main-col">
+                <div class="player-box">
+                  <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
+                </div>
+                <div class="player-meta">
+                  <h1>${escapeHtml(sn.title)}</h1>
+                  <div class="stats">
+                    <div>${fmtNum(stats.viewCount)} 回視聴</div>
+                    <div>・</div>
+                    <div>${timeAgo(sn.publishedAt)}</div>
+                    <div style="margin-left:auto;font-weight:700">
+                      ${fmtNum(stats.likeCount || 0)} 👍
+                    </div>
+                    <!-- ★★ プレイヤー切替プルダウン（高評価の右側）★★ -->
+                    <select id="playerSelect" style="margin-left:8px">
+                      <option value="official" selected>公式プレイヤー</option>
+                      <option value="original">オリジナルプレイヤー</option>
+                    </select>
+                  </div>
+                  <div class="channel-row">
+                    <img src="${chItem.snippet.thumbnails.default.url}" alt="">
+                    <div class="ch-info">
+                      <div style="font-weight:700">
+                        <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
+                          ${escapeHtml(chItem.snippet.title || sn.channelTitle)}
+                        </a>
+                      </div>
+                      <div style="color:#606060;font-size:13px">${fmtNum(chItem.statistics?.subscriberCount)} 人の登録者</div>
+                    </div>
+                    <div class="btn-sub">登録</div>
+                  </div>
+                  <div style="margin-top:12px;color:#333">${escapeHtml(sn.description || '').slice(0,600)}${(sn.description||'').length>600 ? '…' : ''}</div>
+                  <div class="comments" id="commentsArea">
+                    <h3 style="margin-top:12px">コメント</h3>
+                    <div id="commentsList"></div>
+                    <div id="commentsSentinel" style="height:32px"></div>
+                  </div>
+                </div>
+              </div>
+              <aside class="side-col">
+                <div style="font-weight:700;margin-bottom:8px">次に再生</div>
+                <div id="relatedList"></div>
+              </aside>
+            </div>
+          `;
+          // --- 追加: チャンネルリンクのクリック処理 ---
+          const watchChLink = app.querySelector('.watch-ch-link');
+          if(watchChLink){
+            watchChLink.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              location.hash = `channel=${chId}`;
+            });
+          }
+          // コメント読み込み
+          setupComments(videoId);
+          // 関連動画読み込み
+          loadRelated(videoId);
+          const playerSelect = document.getElementById('playerSelect');
+          const iframe = document.getElementById('videoIframe');
+          playerSelect.addEventListener('change', () => {
+            if(playerSelect.value === 'official'){
+              iframe.src = `https://www.youtube.com/embed/${videoId}`;
+            } else {
+              iframe.src = `/watch.html?id=${videoId}`;
+            }
+          });
+        }catch(e){
+          app.innerHTML = `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
+        }
+      }
 
-    const channel = await innertube.getChannel(channelId);
-    if (!channel) throw new Error('チャンネルが見つからない');
+      async function loadRelated(videoId){
+        const container = document.getElementById('relatedList');
+        container.innerHTML = '<div>読み込み中…</div>';
+        try {
+          const res = await fetch(`/api/video/${videoId}`);
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          const relatedItems = data.related || [];
+          // 結果を表示
+          if(relatedItems.length){
+            container.innerHTML = '';
+            for(const v of relatedItems){
+              const div = document.createElement('div');
+              div.className = 'related-item';
+              div.innerHTML = `
+                <div class="related-thumb"><img src="${v.thumbnails?.[v.thumbnails.length - 1]?.url||''}" alt=""></div>
+                <div class="related-info">
+                  <div class="title">${escapeHtml(v.title)}</div>
+                  <div style="color:#606060;font-size:13px">${escapeHtml(v.author)} ・ ${fmtNum(v.viewCount)} 回</div>
+                </div>
+              `;
+              div.addEventListener('click', ()=> location.hash = `watch=${v.id}`);
+              container.appendChild(div);
+            }
+          } else {
+            container.innerHTML = '<div style="color:#606060">関連動画が見つからない</div>';
+          }
+        } catch (e) {
+          container.innerHTML = '<div style="color:#c00">関連動画取得失敗</div>';
+        }
+      }
 
-    const title = channel.header?.title?.text || channel.metadata?.title || '';
-    const desc = channel.metadata?.description || '';
-    const thumb = channel.avatar?.thumbnails?.[channel.avatar.thumbnails.length - 1]?.url || '';
-    const subs = channel.metadata?.subscribers?.text?.replace(/[^0-9]/g, '') || '0';
+      /* -------------------- コメント（無限読み込み） -------------------- */
+      let commentsPageToken = {};
+      async function setupComments(videoId){
+        const list = document.getElementById('commentsList');
+        list.innerHTML = '';
+        commentsPageToken[videoId] = null;
+        let loading = false;
+        const loadMore = async ()=>{
+          if(loading) return;
+          loading = true;
+          try{
+            const url = `/api/comments/${videoId}${commentsPageToken[videoId] ? `?continuation=${commentsPageToken[videoId]}` : ''}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            commentsPageToken[videoId] = data.nextContinuation || null;
+            for(const it of data.comments || []){
+              const sn = it;
+              const div = document.createElement('div');
+              div.className = 'comment';
+              div.innerHTML = `
+                <img src="${sn.author.thumbnails?.[0]?.url || ''}" alt="">
+                <div class="c-body">
+                  <div class="name">${escapeHtml(sn.author.name)} ・ <span style="color:#606060;font-size:12px">${timeAgo(sn.published)}</span></div>
+                  <div class="text">${escapeHtml(sn.content)}</div>
+                </div>
+              `;
+              list.appendChild(div);
+            }
+            if(!(data.comments||[]).length && !list.innerHTML) list.innerHTML = '<div style="color:#606060">コメントが存在しないか、非表示</div>';
+          }catch(e){
+            console.error('comments error',e);
+            list.innerHTML += `<div style="color:#c00">コメントの読み込みに失敗</div>`;
+          } finally {
+            loading = false;
+          }
+        };
+        // IntersectionObserver で無限スクロール
+        const sentinel = el('commentsSentinel');
+        const io = new IntersectionObserver(entries=>{
+          entries.forEach(ent=>{
+            if(ent.isIntersecting) loadMore();
+          });
+        }, {rootMargin:'400px'});
+        io.observe(sentinel);
+        observerMap.set('comments_'+videoId, io);
+        loadMore();
+      }
 
-    app.innerHTML = `
-      <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
-        <img src="${thumb}" style="width:88px;height:88px;border-radius:50%">
-        <div>
-          <div style="font-weight:700;font-size:18px">${escapeHtml(title)}</div>
-          <div style="color:#606060">${fmtNum(subs)} 人の登録者</div>
-          <div style="margin-top:8px"><button class="btn-sub">登録</button></div>
-        </div>
-      </div>
-      <div style="font-size:13px;color:#333;margin-bottom:12px">${escapeHtml(desc).slice(0,500)}${desc.length>500?'…':''}</div>
-      <div style="font-weight:700;margin:12px 0">動画</div>
-      <div class="video-grid" id="channelVideos"></div>
-      <div id="channelSentinel" style="height:32px"></div>
-    `;
-
-    const grid = el('channelVideos');
-    let nextPage = null;
-    let loading = false;
-
-    const loadMore = async () => {
-      if (loading) return;
-      loading = true;
-      try {
-        const videosFeed = await channel.getVideos({ continuation: nextPage || undefined });  // チャンネル動画フィード
-        nextPage = videosFeed.continuations?.next_continuation_token || null;
-
-        for (const raw of videosFeed.videos || []) {
-          const item = {
-            id: raw.id,
-            snippet: {
-              title: raw.title?.text || '',
-              channelId: channelId,
-              channelTitle: title,
-              thumbnails: { medium: { url: raw.thumbnails?.[raw.thumbnails.length - 1]?.url || '' } },
-              publishedAt: raw.published?.text || ''
-            },
-            statistics: {
-              viewCount: raw.view_count?.text?.replace(/[^0-9]/g, '') || '0'
+      /* -------------------- チャンネルページ（簡易） -------------------- */
+      async function renderChannel(channelId){
+        app.innerHTML = `<div>チャンネル読み込み中…</div>`;
+        try{
+          const res = await fetch(`/api/channel/${channelId}`);
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          if(!data) throw new Error('チャンネルが見つからない');
+          const title = data.title;
+          const desc = data.description || '';
+          const thumb = data.avatar || '';
+          const subs = data.subscribers || 0;
+          app.innerHTML = `
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+              <img src="${thumb}" style="width:88px;height:88px;border-radius:50%">
+              <div>
+                <div style="font-weight:700;font-size:18px">${escapeHtml(title)}</div>
+                <div style="color:#606060">${fmtNum(subs)} 人の登録者</div>
+                <div style="margin-top:8px"><button class="btn-sub">登録</button></div>
+              </div>
+            </div>
+            <div style="font-size:13px;color:#333;margin-bottom:12px">${escapeHtml(desc).slice(0,500)}${desc.length>500?'…':''}</div>
+            <div style="font-weight:700;margin:12px 0">動画</div>
+            <div class="video-grid" id="channelVideos"></div>
+            <div id="channelSentinel" style="height:32px"></div>
+          `;
+          // チャンネルの動画を search.list で取得
+          const grid = el('channelVideos');
+          let nextPage = null;
+          let loading = false;
+          const loadMore = async ()=>{
+            if(loading) return;
+            loading = true;
+            try{
+              const url = `/api/channel/${channelId}${nextPage ? `?continuation=${nextPage}` : ''}`;
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(await res.text());
+              const data = await res.json();
+              nextPage = data.nextContinuation || null;
+              for(const v of data.videos ||[]){
+                const card = await makeVideoCard(v);
+                grid.appendChild(card);
+              }
+            }catch(e){
+              console.error('channel videos',e);
+              grid.innerHTML += `<div style="color:#c00">読み込み失敗</div>`;
+            } finally {
+              loading = false;
             }
           };
-          const card = await makeVideoCard(item);
-          grid.appendChild(card);
+          const sentinel = el('channelSentinel');
+          const io = new IntersectionObserver(entries=>{
+            entries.forEach(ent=>{
+              if(ent.isIntersecting) loadMore();
+            });
+          }, {rootMargin:'400px'});
+          io.observe(sentinel);
+          observerMap.set('channel_'+channelId, io);
+          loadMore();
+        }catch(e){
+          app.innerHTML = `<div style="color:#c00">チャンネル読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
         }
-      } catch (e) {
-        console.error('channel videos', e);
-        grid.innerHTML += `<div style="color:#c00">読み込み失敗</div>`;
-      } finally {
-        loading = false;
       }
-    };
 
-    const sentinel = el('channelSentinel');
-    const io = new IntersectionObserver(entries => {
-      entries.forEach(ent => {
-        if (ent.isIntersecting) loadMore();
-      });
-    }, { rootMargin: '400px' });
-    io.observe(sentinel);
-    observerMap.set('channel_' + channelId, io);
-    loadMore();
-  } catch (e) {
-    app.innerHTML = `<div style="color:#c00">チャンネル読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
-  }
-}
-
-      
-/* -------------------- 小さなユーティリティ -------------------- */
-function escapeHtml(s=''){
-  return String(s)
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'",'&#39;');
-}
+      /* -------------------- 小さなユーティリティ -------------------- */
+      function escapeHtml(s=''){
+        return String(s)
+          .replaceAll('&','&amp;')
+          .replaceAll('<','&lt;')
+          .replaceAll('>','&gt;')
+          .replaceAll('"','&quot;')
+          .replaceAll("'",'&#39;');
+      }
     </script>
-  </div>
-
+  <div>
 <script>
   // 利用コード制御
   const correctPassword = "manabinotobira"; // 任意に変更
@@ -598,7 +542,6 @@ function escapeHtml(s=''){
   const msg = document.getElementById('passwordMsg');
   const screen = document.getElementById('passwordScreen');
   const content = document.getElementById('mainContent');
-
   btn.addEventListener('click', () => {
     if(input.value === correctPassword){
       screen.style.display = 'none';
@@ -609,22 +552,18 @@ function escapeHtml(s=''){
       input.focus();
     }
   });
-
   input.addEventListener('keydown', e => {
     if(e.key === 'Enter') btn.click();
   });
-
   // Render を裏で起動しておく
 window.addEventListener('load', () => {
   // Render 本体を起こす
   fetch('https://teaching-materials-r4zf.onrender.com/', { mode: 'no-cors' })
     .catch(() => {});
-
   // ついでに watch.html も起こす
   fetch('https://teaching-materials-r4zf.onrender.com/watch.html?id=dummy', { mode: 'no-cors' })
     .catch(() => {});
 });
-
 </script>
 </body>
 </html>
