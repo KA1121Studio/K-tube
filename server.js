@@ -125,30 +125,41 @@ app.get("/proxy-hls", async (req, res) => {
 // Innertubeを使った新しいAPIエンドポイント（公式APIの置き換え）
 
 // ホーム画面の人気動画（Trending）
+// おすすめ画面用エンドポイント（/api/popular または /api/trending として）
 app.get("/api/popular", async (req, res) => {
   if (!innertube) return res.status(503).json({ error: "Innertube not ready" });
   try {
-    const trending = await innertube.getTrending(); // 日本向けトレンド動画
-    const videos = trending.videos.slice(0, 12); // 最大12件
+    // getTrending() をやめて、browse() で直接おすすめフィードを取得
+    const response = await innertube.actions.browse({
+      browseId: 'FEwhat_to_watch',  // YouTubeの「おすすめ」フィード（ホーム画面相当）
+      params: ''  // パラメータ空でシンプルに（これで400回避しやすい）
+    });
+
+    // レスポンスから動画リストを抽出（2026年現在のrichGridRenderer構造）
+    const gridContents = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.richGridRenderer?.contents || [];
+    const videos = gridContents
+      .filter(item => item.richItemRenderer?.content?.videoRenderer)  // 動画のみフィルタ
+      .map(item => item.richItemRenderer.content.videoRenderer);
 
     res.json({
-      items: videos.map(v => ({
-        id: v.id,
+      items: videos.slice(0, 12).map(v => ({
+        id: v.videoId,
         snippet: {
-          title: v.title.text,
-          channelTitle: v.author?.name || "Unknown",
-          channelId: v.author?.id || "",
-          thumbnails: { medium: { url: v.thumbnails[0]?.url || "" } },
-          publishedAt: v.published?.text || new Date().toISOString()
+          title: v.title?.runs?.[0]?.text || v.title?.simpleText || '',
+          channelId: v.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '',
+          channelTitle: v.ownerText?.runs?.[0]?.text || v.ownerText?.simpleText || '不明',
+          thumbnails: { medium: { url: v.thumbnail?.thumbnails?.slice(-1)[0]?.url || '' } },
+          publishedAt: v.publishedTimeText?.simpleText || v.publishedTimeText?.runs?.[0]?.text || new Date().toISOString()
         },
         statistics: {
-          viewCount: v.view_count?.text?.replace(/\D/g, '') || "0"
+          viewCount: v.viewCountText?.simpleText?.replace(/[^0-9KMB]/g, '') ||
+                     v.viewCountText?.runs?.[0]?.text?.replace(/[^0-9KMB]/g, '') || '0'
         }
       })),
-      nextPageToken: trending.continuations?.next_continuation_token || null
+      nextPageToken: response.onResponseReceivedCommands?.[0]?.appendContinuationItemsAction?.continuationItem?.continuationEndpoint?.continuationCommand?.token || null
     });
   } catch (err) {
-    console.error("Popular error:", err);
+    console.error("Popular browse error:", err.message, err.stack || err);
     res.status(500).json({ error: err.message });
   }
 });
