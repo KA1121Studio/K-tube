@@ -151,42 +151,53 @@
         renderHome();
       }
 
-      /* -------------------- ホーム（人気/おすすめ） -------------------- */
-      function renderHome(){
-        app.innerHTML = `
-          <section id="homeSection">
-            <div style="margin:12px 0;font-weight:700;font-size:18px">おすすめ</div>
-            <div class="video-grid" id="videoGrid"></div>
-            <div id="homeSentinel" style="height:32px"></div>
-          </section>
-        `;
-        nextPageTokenHome = null;
-        homeQuery = null;
-        setupHomeInfinite();
-        loadHome();
-      }
+/* -------------------- ホーム（人気/おすすめ） -------------------- */
+function renderHome(){
+  app.innerHTML = `
+    <section id="homeSection">
+      <div style="margin:12px 0;font-weight:700;font-size:18px">おすすめ（検索結果から表示）</div>
+      <div class="video-grid" id="videoGrid"></div>
+      <div id="homeSentinel" style="height:32px"></div>
+    </section>
+  `;
+  nextPageTokenHome = null;
+  homeQuery = null;  // 固定クエリなので不要だが残す
+  setupHomeInfinite();
+  loadHome();
+}
 
-      async function loadHome(){
-        if(homeLoading) return;
-        homeLoading = true;
-        const grid = el('videoGrid');
-        try{
-          const res = await fetch('/api/trending');
-          if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
-          nextPageTokenHome = data.nextPageToken || null;
-          for(const item of data.items || []){
-            const card = await makeVideoCard(item);
-            grid.appendChild(card);
-          }
-        }catch(e){
-          console.error(e);
-          grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
-        } finally {
-          homeLoading = false;
-        }
-      }
+async function loadHome(){
+  if(homeLoading) return;
+  homeLoading = true;
+  const grid = el('videoGrid');
+  try{
+    // 固定クエリで検索（例: "おすすめ" または空で人気近似、または "trending" など）
+    const query = "おすすめ";  // ← ここを変えられる！ "人気動画" "trending japan" など試して調整
+    const url = `/api/search?q=${encodeURIComponent(query)}${nextPageTokenHome ? `&continuation=${nextPageTokenHome}` : ''}`;
+    
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
 
+    nextPageTokenHome = data.nextPageToken || null;
+
+    for(const item of data.items || []){
+      // 検索結果をホーム互換形式に整形（statisticsは空でもOK）
+      const homeItem = {
+        id: item.id.videoId,
+        snippet: item.snippet,
+        statistics: item.statistics || { viewCount: '0' }  // 検索時はstatisticsない場合がある
+      };
+      const card = await makeVideoCard(homeItem);
+      grid.appendChild(card);
+    }
+  }catch(e){
+    console.error(e);
+    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message || String(e))}</div>`;
+  } finally {
+    homeLoading = false;
+  }
+}
       async function makeVideoCard(item){
         const vid = item.id;
         const sn = item.snippet || {};
