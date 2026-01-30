@@ -16,13 +16,17 @@ let innertube;
 (async () => {
   try {
     innertube = await Innertube.create({
-      // 2026年現在の推奨オプション（ドキュメントに基づく）
-      // retrieve_player: true,  ← 最新版ではデフォルトで扱われることが多く、明示不要の場合あり。ストリーミングが必要なら有効
-      // cache: new UniversalCache(false),  ← キャッシュはオプション。Node.jsサーバーではメモリキャッシュ有効がおすすめだが、UniversalCacheは最新版で非推奨/削除の可能性あり（READMEに記載なし）
-      // generate_session_locally: true,  ← セッションをローカル生成（推奨）
-      // client_type: 'WEB' など（デフォルトでOK）
+      client_options: {
+        clientName: 'WEB',
+        clientVersion: '2.20260101.01.00',  // ← 2026年1月現在の有効なバージョンを入れる（下記で確認方法）
+        hl: 'ja',
+        gl: 'JP',
+        utcOffsetMinutes: 540  // 日本時間
+      },
+      generate_session_locally: true,  // セッションをローカル生成（必須）
+      retrieve_player: false  // 動画プレイヤー情報不要ならオフで軽く
     });
-    console.log('Innertube ready!');
+    console.log('Innertube ready with custom client!');
   } catch (err) {
     console.error('Innertube init failed:', err);
   }
