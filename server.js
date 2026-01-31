@@ -272,26 +272,49 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// 動画詳細 + 関連 + チャンネル情報
+// 動画詳細エンドポイント（再生回数・高評価・チャンネルアイコンを確実取得）
 app.get("/api/video/:id", async (req, res) => {
   const id = req.params.id;
   try {
     const info = await innertube.getInfo(id);
     res.json({
-      title: info.title?.text || info.title || '',
+      title: info.title?.text || info.title || '不明',
       description: info.description || '',
-      viewCount: info.view_count?.text?.replace(/[^0-9]/g, '') || '0',
-      published: info.published?.text || '',
-      likeCount: info.like_count?.text?.replace(/[^0-9]/g, '') || '0',
+      viewCount: info.view_count?.text?.replace(/[^0-9]/g, '') || info.view_count?.short_text || '0',
+      published: info.published?.text || info.published?.date || new Date().toISOString(),
+      likeCount: info.like_count?.text?.replace(/[^0-9]/g, '') || info.like_count?.short_text || '0',
       channel: {
         id: info.author?.id || '',
-        name: info.author?.name || '',
-        thumbnails: info.author?.thumbnails || [],
-        subscriberCount: info.author?.subscriber_count?.text?.replace(/[^0-9]/g, '') || '0'
+        name: info.author?.name || '不明',
+        thumbnails: info.author?.thumbnails || info.author?.avatar || [],  // アイコン複数候補から取る
+        subscriberCount: info.author?.subscriber_count?.text?.replace(/[^0-9]/g, '') || info.author?.subscribers || '0'
       }
     });
   } catch (err) {
     console.error("Video info error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// コメントエンドポイント（読み込み失敗対策）
+app.get("/api/comments/:videoId", async (req, res) => {
+  const videoId = req.params.videoId;
+  const continuation = req.query.continuation;
+  try {
+    const commentsData = await innertube.getComments(videoId, { continuation });
+    res.json({
+      comments: (commentsData.comments || []).map(c => ({
+        author: {
+          name: c.author?.name || '匿名',
+          thumbnails: c.author?.thumbnails || []
+        },
+        content: c.content?.text || c.content || '',
+        published: c.published?.text || ''
+      })),
+      nextContinuation: commentsData.continuations?.next_continuation_token || null
+    });
+  } catch (err) {
+    console.error("Comments error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
