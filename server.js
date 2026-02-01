@@ -36,21 +36,22 @@ app.get("/watch.html", (req, res) => {
 });
 
 // ★ yt-dlp で署名付きURLを取得（オリジナルプレイヤー用）
+// server.js の該当部分を以下のように修正または復活させる
 app.get("/video", async (req, res) => {
   const videoId = req.query.id;
   if (!videoId) return res.status(400).json({ error: "video id required" });
 
   try {
-    // yt-dlpコマンド（あなたの元コードをほぼそのまま）
+    // yt-dlp で署名付きURLを取得（cookies必須）
     const output = execSync(
-      `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --sleep-requests 1 --user-agent "Mozilla/5.0" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]" https://youtu.be/${videoId}`
+      `yt-dlp --cookies youtube-cookies.txt --no-check-certificate --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best" https://youtu.be/${videoId}`
     ).toString().trim().split("\n");
 
     const videoUrl = output[0] || "";
-    const audioUrl = output[1] || "";
+    const audioUrl = output[1] || videoUrl;  // 音声分離できない場合は同じURLを使う
 
-    if (!videoUrl || !audioUrl) {
-      throw new Error("Failed to extract URLs");
+    if (!videoUrl) {
+      throw new Error("No valid stream URL extracted. Cookies may be expired.");
     }
 
     res.json({
@@ -59,10 +60,12 @@ app.get("/video", async (req, res) => {
       source: "yt-dlp"
     });
   } catch (e) {
-    console.error("yt-dlp error:", e);
+    console.error("yt-dlp error:", e.message, e.stack);
     res.status(500).json({
-      error: "failed_to_fetch_video",
-      message: e.message || String(e)
+      error: "failed_to_extract_video",
+      message: e.message.includes("Sign in") 
+        ? "YouTubeがボット判定しました。youtube-cookies.txtを最新のものに更新してください" 
+        : e.message
     });
   }
 });
