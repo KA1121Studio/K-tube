@@ -117,32 +117,38 @@ app.get("/proxy-hls", async (req, res) => {
 });
 
 // Piped API プロキシエンドポイント（CORS回避 + 負荷分散用）
+const pipedInstances = [
+  'https://api.piped.private.coffee',
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.tokhmi.xyz'
+];
+
 app.get('/piped/*', async (req, res) => {
-  const path = req.path.replace('/piped', '');  // /piped/trending → /trending
-  const targetInstance = 'https://pipedapi.kavin.rocks';  // または leptons.xyz など安定したもの
-
+  const path = req.path.replace('/piped', '');
   const query = new URLSearchParams(req.query).toString();
-  const targetUrl = `${targetInstance}${path}${query ? '?' + query : ''}`;
 
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0'
+  for (const base of pipedInstances) {
+    const targetUrl = `${base}${path}${query ? '?' + query : ''}`;
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        res.setHeader('Content-Type', contentType || 'application/json');
+        return response.body.pipe(res);
       }
-    });
-
-    if (!response.ok) {
-      return res.status(response.status).send(await response.text());
+      console.log(`Instance ${base} failed with ${response.status}`);
+    } catch (e) {
+      console.error(`Instance ${base} error:`, e.message);
     }
-
-    const contentType = response.headers.get('content-type');
-    res.setHeader('Content-Type', contentType || 'application/json');
-    response.body.pipe(res);
-  } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).json({ error: 'Proxy failed', message: error.message });
   }
+
+  res.status(503).json({ error: 'All Piped instances failed' });
 });
 
 app.listen(PORT, () => {
