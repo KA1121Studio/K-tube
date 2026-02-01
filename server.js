@@ -116,6 +116,34 @@ app.get("/proxy-hls", async (req, res) => {
   }
 });
 
+// Piped API プロキシエンドポイント（CORS回避 + 負荷分散用）
+app.get('/piped/*', async (req, res) => {
+  const path = req.url.replace('/piped', '');  // /piped/trending → /trending
+  const targetInstance = 'https://pipedapi.kavin.rocks';  // ここを好きなインスタンスに変更（例: leptons.xyz など）
+
+  try {
+    const fullUrl = `${targetInstance}${path}${req.url.includes('?') ? '' : '?'}${new URLSearchParams(req.query).toString()}`;
+    
+    const response = await fetch(fullUrl, {
+      method: req.method,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (compatible; YourApp/1.0)'
+      }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Piped returned ${response.status}` });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Piped proxy error:', error.message);
+    res.status(500).json({ error: 'Proxy failed to fetch from Piped', details: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
