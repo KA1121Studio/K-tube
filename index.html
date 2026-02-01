@@ -299,25 +299,22 @@ async function loadHome(){
       }
 
       /* -------------------- 動画再生画面 -------------------- */
-    async function renderWatch(videoId){
-  observerMap.forEach((o)=>o.disconnect());
-  observerMap.clear();
-  app.innerHTML = `<div>読み込み中...</div>`;
+async function renderWatch(videoId){
+  // ... 読み込み中
   try{
     const res = await fetch(`/api/video/${videoId}`);
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
 
-    // データ欠落対策（空ならデフォルト値）
-    const title = data.title || 'タイトル不明';
+    const title = data.title || '不明';
     const description = data.description || '';
     const viewCount = data.viewCount || '0';
     const published = data.published || new Date().toISOString();
     const likeCount = data.likeCount || '0';
     const channel = data.channel || {};
     const chId = channel.id || '';
-    const chTitle = channel.name || 'チャンネル不明';
-    const chThumb = channel.thumbnails?.[0]?.url || 'https://via.placeholder.com/48?text=?';  // アイコン欠落時プレースホルダー
+    const chTitle = channel.name || '不明';
+    const chThumb = channel.thumbnails?.[0]?.url || 'https://via.placeholder.com/48?text=' + chTitle.slice(0,1);  // プレースホルダー
     const chSubs = channel.subscriberCount || '0';
 
     app.innerHTML = `
@@ -341,7 +338,7 @@ async function loadHome(){
               </select>
             </div>
             <div class="channel-row">
-              <img src="${chThumb}" alt="">
+              <img src="${chThumb}" alt="" onerror="this.src='https://via.placeholder.com/48?text=?';">
               <div class="ch-info">
                 <div style="font-weight:700">
                   <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
@@ -353,11 +350,7 @@ async function loadHome(){
               <div class="btn-sub">登録</div>
             </div>
             <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length > 600 ? '…' : ''}</div>
-            <div class="comments" id="commentsArea">
-              <h3 style="margin-top:12px">コメント</h3>
-              <div id="commentsList"></div>
-              <div id="commentsSentinel" style="height:32px"></div>
-            </div>
+            <!-- コメントは後で追加 -->
           </div>
         </div>
         <aside class="side-col">
@@ -367,7 +360,7 @@ async function loadHome(){
       </div>
     `;
 
-    // チャンネルリンクイベント（nullガード強化）
+    // イベントリスナー（nullチェック）
     const watchChLink = app.querySelector('.watch-ch-link');
     if (watchChLink) {
       watchChLink.addEventListener('click', (e) => {
@@ -375,11 +368,8 @@ async function loadHome(){
         e.stopPropagation();
         location.hash = `channel=${chId}`;
       });
-    } else {
-      console.warn('Channel link not found');
     }
 
-    setupComments(videoId);
     loadRelated(videoId);
 
     const playerSelect = document.getElementById('playerSelect');
