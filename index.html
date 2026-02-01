@@ -320,93 +320,34 @@ async function pipedFetch(endpoint, params = {}) {
 
       // 動画再生画面
 // 関連動画（Piped依存を避けるため、タイトル検索でフォールバック）
-async function loadRelated(videoId, relatedStreams = []) {
-  const container = document.getElementById('relatedList');
-  container.innerHTML = '<div>読み込み中…</div>';
-
-  if (relatedStreams.length > 0) {
-    // すでにデータがあれば使う（ただし今回はスキップ）
-  } else {
-    try {
-      // yt-dlp復活時は /streams を使わないので、代替として動画タイトル検索で関連を取得（簡易）
-      // または完全にスキップして「関連動画なし」とする
-      // ここは簡易的に「関連動画は現在利用できません」と表示
-      container.innerHTML = '<div style="color:#606060">関連動画は現在利用できません（yt-dlpモード）</div>';
-      return;
-    } catch (e) {
-      console.warn('related fetch skipped in yt-dlp mode', e);
-      container.innerHTML = '<div style="color:#606060">関連動画は現在利用できません</div>';
-    }
-  }
-}
-
-// コメントはPipedの /comments がまだ動く可能性があるので、そのまま（エラー時は表示）
-let commentsPageToken = {};
-async function setupComments(videoId) {
-  const list = document.getElementById('commentsList');
-  list.innerHTML = '';
-  commentsPageToken[videoId] = null;
-  let loading = false;
-
-  const loadMore = async () => {
-    if (loading) return;
-    loading = true;
-    try {
-      const params = { sort_by: 'top' };
-      if (commentsPageToken[videoId]) params.nextpage = commentsPageToken[videoId];
-      const res = await pipedFetch(`/comments/${videoId}`, params);
-      commentsPageToken[videoId] = res.nextpage || null;
-
-      for (const c of res.comments || []) {
-        const div = document.createElement('div');
-        div.className = 'comment';
-        div.innerHTML = `
-          <img src="${c.authorThumbnails?.[c.authorThumbnails.length-1]?.url || ''}" alt="">
-          <div class="c-body">
-            <div class="name">${escapeHtml(c.author || '')} ・ <span style="color:#606060;font-size:12px">${timeAgo(c.published || '')}</span></div>
-            <div class="text">${escapeHtml(c.content || '')}</div>
-          </div>
-        `;
-        list.appendChild(div);
-      }
-      if (!res.comments?.length && !list.innerHTML) {
-        list.innerHTML = '<div style="color:#606060">コメントが存在しないか、非表示</div>';
-      }
-    } catch (e) {
-      console.error(e);
-      list.innerHTML += `<div style="color:#c00">コメント読み込み失敗（yt-dlpモードでは制限される場合あり）</div>`;
-    } finally {
-      loading = false;
-    }
-  };
-
-  const sentinel = el('commentsSentinel');
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
-  }, { rootMargin: '400px' });
-  io.observe(sentinel);
-  observerMap.set(`comments_${videoId}`, io);
-  loadMore();
-}
-
-// 再生ページ（メイン変更箇所）
 async function renderWatch(videoId) {
   observerMap.forEach(o => o.disconnect());
   observerMap.clear();
   app.innerHTML = `<div>読み込み中...</div>`;
 
   try {
-    // Pipedの /streams は呼ばない（yt-dlpで再生URL取得に特化）
-    // メタデータは仮表示（必要なら後で /search?q=${videoId} でタイトルだけ取る拡張可能）
-    const title = `動画（ID: ${videoId}） - yt-dlpモード`;
-    const views = '---';
-    const likes = '---';
-    const uploaded = '---';
-    const description = '説明文はyt-dlpモードでは取得していません。公式プレイヤーでご覧ください。';
-    const chName = 'チャンネル名 ---';
-    const chId = '';  // 空でリンク無効化
-    const chThumb = '';  // 空でアイコンなし
-    const chSubs = 0;
+    // 1. メタデータはPipedの軽い検索で取得（/streams を避ける）
+    let metaData = {};
+    try {
+      const searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
+      // 検索結果から該当動画を1件探す（videoId一致）
+      metaData = (searchData || []).find(item => 
+        item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
+      ) || {};
+    } catch (searchErr) {
+      console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
+    }
+
+    // 2. 再生URLはyt-dlpで取得（watch.html側で処理）
+    const title = metaData.title || `動画（ID: ${videoId}）`;
+    const views = metaData.views || '---';
+    const likes = '---';  // 検索結果にlikesがない場合が多い
+    const uploaded = metaData.uploaded || metaData.uploadedDate || '---';
+    const description = metaData.description || '説明文を取得できませんでした';
+    const chName = metaData.uploaderName || metaData.uploader || '---';
+    const chId = metaData.uploaderUrl?.split('/').pop() || '';
+    const chThumb = metaData.uploaderAvatar || '';
+    const chSubs = metaData.uploaderSubscriberCount || 0;
 
     app.innerHTML = `
       <div class="watch-container">
@@ -455,21 +396,41 @@ async function renderWatch(videoId) {
       </div>
     `;
 
+    // チャンネルリンク
     const watchChLink = app.querySelector('.watch-ch-link');
     if (watchChLink) {
       watchChLink.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
-        // chIdが空なので無効化
-        alert('チャンネルリンクはyt-dlpモードでは利用できません');
+        location.hash = `channel=${chId}`;
       });
     }
 
-    setupComments(videoId);  // Pipedコメントはそのまま（動く場合）
+    setupComments(videoId);  // コメントはPipedのまま
 
-    // 関連動画はyt-dlpモードでスキップ
+    // 関連動画：検索結果から関連っぽいものを簡易表示（任意）
     const container = document.getElementById('relatedList');
-    container.innerHTML = '<div style="color:#606060">関連動画はyt-dlpモードでは表示されません</div>';
+    if (searchData && searchData.length > 1) {
+      container.innerHTML = '';
+      searchData.slice(0, 5).forEach(item => {  // 上位5件
+        const relVid = item.url?.split('v=')[1] || '';
+        if (relVid && relVid !== videoId) {
+          const div = document.createElement('div');
+          div.className = 'related-item';
+          div.innerHTML = `
+            <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
+            <div class="related-info">
+              <div class="title">${escapeHtml(item.title || '')}</div>
+              <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
+            </div>
+          `;
+          div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+          container.appendChild(div);
+        }
+      });
+    } else {
+      container.innerHTML = '<div style="color:#606060">関連動画が見つかりません</div>';
+    }
 
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
@@ -478,7 +439,7 @@ async function renderWatch(videoId) {
       if (playerSelect.value === 'official') {
         iframe.src = `https://www.youtube.com/embed/${videoId}`;
       } else {
-        // yt-dlpで再生URL取得 → watch.htmlで /video をfetchして再生
+        // 再生URL取得はyt-dlp（watch.html内で /video をfetch）
         iframe.src = `/watch.html?id=${videoId}`;
       }
     });
@@ -487,14 +448,7 @@ async function renderWatch(videoId) {
     app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
       <h2>再生ページエラー</h2>
       <p>${escapeHtml(e.message)}</p>
-      <p>yt-dlpで再生URLの取得に失敗しました。</p>
-      <p>考えられる原因:</p>
-      <ul style="text-align:left; margin:20px auto; max-width:600px;">
-        <li>youtube-cookies.txtが古い・無効 → 再取得してください</li>
-        <li>yt-dlpのフォーマット指定が合わない → server.jsを確認</li>
-        <li>動画が制限されている（年齢制限など）</li>
-        <li>429 Too Many Requests → --sleep-requests を追加</li>
-      </ul>
+      <p>メタデータ取得またはyt-dlpで失敗しました。</p>
       <p>公式プレイヤーなら再生可能です。</p>
     </div>`;
   }
