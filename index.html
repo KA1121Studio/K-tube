@@ -396,30 +396,18 @@ async function renderWatch(videoId) {
   app.innerHTML = `<div>読み込み中...</div>`;
 
   try {
-    // 1. yt-dlpで再生URLだけ取得（/video エンドポイント呼び出し）
-    const streamData = await fetch(`/video?id=${videoId}`).then(res => {
-      if (!res.ok) throw new Error(`yt-dlpエラー: ${res.status}`);
-      return res.json();
-    });
-
-    if (!streamData.video) {
-      throw new Error('動画URLが取得できませんでした。cookiesを確認してください');
-    }
-
-    // 2. メタデータはPipedの軽いエンドポイントから取得（/streamsの代わりに/videoや/searchを使う）
-    // Pipedに /video/{id} がない場合が多いので、今回は仮でタイトルなどを固定表示（または/searchで代用）
-    // ここではシンプルに「yt-dlpモード」と表示（後で拡張可能）
-    const title = `動画（ID: ${videoId}）`; // 仮
+    // Pipedの /streams は呼ばない（yt-dlpで再生URL取得に特化）
+    // メタデータは仮表示（必要なら後で /search?q=${videoId} でタイトルだけ取る拡張可能）
+    const title = `動画（ID: ${videoId}） - yt-dlpモード`;
     const views = '---';
     const likes = '---';
     const uploaded = '---';
-    const description = '説明文は現在取得できません（yt-dlpモード）';
-    const chName = 'チャンネル名取得中...';
-    const chId = '';
-    const chThumb = '';
+    const description = '説明文はyt-dlpモードでは取得していません。公式プレイヤーでご覧ください。';
+    const chName = 'チャンネル名 ---';
+    const chId = '';  // 空でリンク無効化
+    const chThumb = '';  // 空でアイコンなし
     const chSubs = 0;
 
-    // 3. HTML表示（公式iframeをベースに、オリジナル選択でwatch.htmlへ）
     app.innerHTML = `
       <div class="watch-container">
         <div class="main-col">
@@ -472,12 +460,16 @@ async function renderWatch(videoId) {
       watchChLink.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
-        location.hash = `channel=${chId}`;
+        // chIdが空なので無効化
+        alert('チャンネルリンクはyt-dlpモードでは利用できません');
       });
     }
 
-    setupComments(videoId);           // Pipedのコメントはそのまま
-    loadRelated(videoId, []);          // 関連はyt-dlpモードではスキップ
+    setupComments(videoId);  // Pipedコメントはそのまま（動く場合）
+
+    // 関連動画はyt-dlpモードでスキップ
+    const container = document.getElementById('relatedList');
+    container.innerHTML = '<div style="color:#606060">関連動画はyt-dlpモードでは表示されません</div>';
 
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
@@ -486,13 +478,12 @@ async function renderWatch(videoId) {
       if (playerSelect.value === 'official') {
         iframe.src = `https://www.youtube.com/embed/${videoId}`;
       } else {
-        // yt-dlpで取得したURLを使うためにwatch.htmlへ
+        // yt-dlpで再生URL取得 → watch.htmlで /video をfetchして再生
         iframe.src = `/watch.html?id=${videoId}`;
       }
     });
 
   } catch (e) {
-    console.error('renderWatch error:', e);
     app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
       <h2>再生ページエラー</h2>
       <p>${escapeHtml(e.message)}</p>
@@ -502,6 +493,7 @@ async function renderWatch(videoId) {
         <li>youtube-cookies.txtが古い・無効 → 再取得してください</li>
         <li>yt-dlpのフォーマット指定が合わない → server.jsを確認</li>
         <li>動画が制限されている（年齢制限など）</li>
+        <li>429 Too Many Requests → --sleep-requests を追加</li>
       </ul>
       <p>公式プレイヤーなら再生可能です。</p>
     </div>`;
