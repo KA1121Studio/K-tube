@@ -276,26 +276,28 @@ app.get('/api/search', async (req, res) => {
 app.get("/api/video/:id", async (req, res) => {
   const id = req.params.id;
   try {
-    const info = await innertube.getInfo(id);
+    const { stdout } = await execPromise(
+      `yt-dlp -j --no-playlist https://youtu.be/${id}`
+    );
+    const meta = JSON.parse(stdout);
+
     res.json({
-      title: info.title?.text || info.title || '不明',
-      description: info.description || '',
-      viewCount: info.view_count?.text?.replace(/[^0-9]/g, '') || info.view_count?.short_text || '0',
-      published: info.published?.text || info.published?.date || new Date().toISOString(),
-      likeCount: info.like_count?.text?.replace(/[^0-9]/g, '') || info.like_count?.short_text || '0',
+      title: meta.title || '不明',
+      description: meta.description || '',
+      viewCount: meta.view_count?.toString() || '0',
+      published: meta.upload_date || '',
+      likeCount: meta.like_count?.toString() || '0',
       channel: {
-        id: info.author?.id || '',
-        name: info.author?.name || '不明',
-        thumbnails: info.author?.thumbnails || info.author?.avatar || [],  // アイコン複数候補から取る
-        subscriberCount: info.author?.subscriber_count?.text?.replace(/[^0-9]/g, '') || info.author?.subscribers || '0'
+        id: meta.channel_id || '',
+        name: meta.uploader || meta.channel || '不明',
+        thumbnails: [{ url: meta.thumbnail || '' }],
+        subscriberCount: meta.channel_follower_count?.toString() || '0'
       }
     });
   } catch (err) {
-    console.error("Video info error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 // コメントエンドポイント（読み込み失敗対策）
 app.get("/api/comments/:videoId", async (req, res) => {
   const videoId = req.params.videoId;
