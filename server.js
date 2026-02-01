@@ -273,31 +273,37 @@ app.get('/api/search', async (req, res) => {
 });
 
 // 動画詳細エンドポイント（再生回数・高評価・チャンネルアイコンを確実取得）
+const util = require('util');
+const execPromise = util.promisify(require('child_process').exec);
+
+// 動画詳細（yt-dlpで取得）
 app.get("/api/video/:id", async (req, res) => {
   const id = req.params.id;
   try {
     const { stdout } = await execPromise(
       `yt-dlp -j --no-playlist https://youtu.be/${id}`
     );
-    const meta = JSON.parse(stdout);
+    const meta = JSON.parse(stdout.trim());
 
     res.json({
-      title: meta.title || '不明',
+      title: meta.title || 'タイトル不明',
       description: meta.description || '',
       viewCount: meta.view_count?.toString() || '0',
-      published: meta.upload_date || '',
+      published: meta.upload_date || new Date().toISOString(),
       likeCount: meta.like_count?.toString() || '0',
       channel: {
         id: meta.channel_id || '',
         name: meta.uploader || meta.channel || '不明',
-        thumbnails: [{ url: meta.thumbnail || '' }],
+        thumbnails: [{ url: meta.thumbnail || meta.thumbnails?.[0]?.url || '' }],
         subscriberCount: meta.channel_follower_count?.toString() || '0'
       }
     });
   } catch (err) {
+    console.error("yt-dlp video error:", err.message, err.stderr);
     res.status(500).json({ error: err.message });
   }
 });
+
 // コメントエンドポイント（読み込み失敗対策）
 app.get("/api/comments/:videoId", async (req, res) => {
   const videoId = req.params.videoId;
