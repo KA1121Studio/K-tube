@@ -275,21 +275,39 @@ async function pipedFetch(endpoint, params = {}) {
         let loading = false;
 
         const loadMore = async () => {
-          if (loading) return;
-          loading = true;
-          try {
-            const data = await pipedFetch('/search', { q, filter: 'videos' });
-            for (const item of data || []) {
-              const card = await makeVideoCard(item);
-              grid.appendChild(card);
-            }
-          } catch (e) {
-            console.error(e);
-            grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
-          } finally {
-            loading = false;
-          }
-        };
+  if (loading) return;
+  loading = true;
+  try {
+    const data = await pipedFetch('/search', { q, filter: 'videos' });
+
+    // ここを修正：dataがオブジェクトの場合、配列部分を取り出す
+    let items = [];
+    if (Array.isArray(data)) {
+      items = data;                     // 直接配列の場合
+    } else if (data && typeof data === 'object') {
+      // よくあるパターン: items, results, または直接配列
+      items = data.items || data.results || data.videos || data || [];
+    } else {
+      items = [];
+    }
+
+    for (const item of items) {
+      const card = await makeVideoCard(item);
+      grid.appendChild(card);
+    }
+
+    // 次ページ対応（もしnextpageがあれば）
+    if (data.nextpage) {
+      // 必要なら次回loadMoreで nextpage を params.nextpage に追加
+      // 今回は簡易的に無視（Pipedのsearchはnextpageが不安定）
+    }
+  } catch (e) {
+    console.error(e);
+    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    loading = false;
+  }
+};
 
         const sentinel = el('searchSentinel');
         const io = new IntersectionObserver(entries => {
