@@ -120,16 +120,29 @@
       }
 
       // Piped 用シンプル fetch ラッパー
-      async function pipedFetch(endpoint, params = {}) {
-        const url = new URL(`${PIPED_API_BASE}${endpoint}`);
-        Object.entries(params).forEach(([k, v]) => {
-          if (v !== undefined && v !== null) url.searchParams.set(k, v);
-        });
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Piped API error: ${resp.status} ${resp.statusText}`);
-        return resp.json();
-      }
+// Piped 用シンプル fetch ラッパー（修正版）
+async function pipedFetch(endpoint, params = {}) {
+  // endpoint が / で始まっている場合もOKにする
+  let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  
+  // クエリパラメータを安全に構築
+  const queryString = new URLSearchParams(params).toString();
+  const fullPath = queryString ? `${path}?${queryString}` : path;
+  
+  // 相対パスで fetch（サーバープロキシ用）
+  const response = await fetch(`${PIPED_API_BASE}${fullPath}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
 
+  if (!response.ok) {
+    throw new Error(`Piped proxy error: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
       // チャンネルサムネイルキャッシュ（Piped版）
       async function getChannelThumbPiped(channelId) {
         if (channelThumbCache[channelId]) return channelThumbCache[channelId];
