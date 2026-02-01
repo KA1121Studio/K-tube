@@ -396,11 +396,30 @@ async function renderWatch(videoId) {
   app.innerHTML = `<div>読み込み中...</div>`;
 
   try {
-    // Pipedの /streams は呼ばない（503回避）
-    // メタデータは取得せず、公式iframeをデフォルトに
-    // タイトルなどは後で /search から取ることも可能だが、今回はシンプルに「読み込み中...」表示
-    // 必要に応じて /search?q=動画ID でタイトルだけ取ることもできるが省略
+    // 1. yt-dlpで再生URLだけ取得（/video エンドポイント呼び出し）
+    const streamData = await fetch(`/video?id=${videoId}`).then(res => {
+      if (!res.ok) throw new Error(`yt-dlpエラー: ${res.status}`);
+      return res.json();
+    });
 
+    if (!streamData.video) {
+      throw new Error('動画URLが取得できませんでした。cookiesを確認してください');
+    }
+
+    // 2. メタデータはPipedの軽いエンドポイントから取得（/streamsの代わりに/videoや/searchを使う）
+    // Pipedに /video/{id} がない場合が多いので、今回は仮でタイトルなどを固定表示（または/searchで代用）
+    // ここではシンプルに「yt-dlpモード」と表示（後で拡張可能）
+    const title = `動画（ID: ${videoId}）`; // 仮
+    const views = '---';
+    const likes = '---';
+    const uploaded = '---';
+    const description = '説明文は現在取得できません（yt-dlpモード）';
+    const chName = 'チャンネル名取得中...';
+    const chId = '';
+    const chThumb = '';
+    const chSubs = 0;
+
+    // 3. HTML表示（公式iframeをベースに、オリジナル選択でwatch.htmlへ）
     app.innerHTML = `
       <div class="watch-container">
         <div class="main-col">
@@ -408,13 +427,13 @@ async function renderWatch(videoId) {
             <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
           </div>
           <div class="player-meta">
-            <h1>動画タイトル取得中...（yt-dlpモード）</h1>
+            <h1>${escapeHtml(title)}</h1>
             <div class="stats">
-              <div>視聴回数 取得中...</div>
+              <div>${fmtNum(views)} 回視聴</div>
               <div>・</div>
-              <div>アップロード日 取得中...</div>
+              <div>${timeAgo(uploaded)}</div>
               <div style="margin-left:auto;font-weight:700">
-                いいね数 取得中...
+                ${fmtNum(likes)} 👍
               </div>
               <select id="playerSelect" style="margin-left:8px">
                 <option value="official" selected>公式プレイヤー</option>
@@ -422,18 +441,18 @@ async function renderWatch(videoId) {
               </select>
             </div>
             <div class="channel-row">
-              <img src="" alt="チャンネルサムネイル">
+              <img src="${chThumb}" alt="">
               <div class="ch-info">
                 <div style="font-weight:700">
-                  <a href="#" class="watch-ch-link" style="text-decoration:none;color:inherit">
-                    チャンネル名 取得中...
+                  <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
+                    ${escapeHtml(chName)}
                   </a>
                 </div>
-                <div style="color:#606060;font-size:13px">登録者数 取得中...</div>
+                <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
               </div>
               <div class="btn-sub">登録</div>
             </div>
-            <div style="margin-top:12px;color:#333">説明文 取得中...</div>
+            <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
             <div class="comments" id="commentsArea">
               <h3 style="margin-top:12px">コメント</h3>
               <div id="commentsList"></div>
@@ -448,22 +467,17 @@ async function renderWatch(videoId) {
       </div>
     `;
 
-    // チャンネルリンクイベント（仮）
     const watchChLink = app.querySelector('.watch-ch-link');
     if (watchChLink) {
       watchChLink.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
-        // chIdが取れないので仮にスキップ
-        alert('チャンネルページは現在yt-dlpモードで制限されています');
+        location.hash = `channel=${chId}`;
       });
     }
 
-    // コメント読み込み（Piped依存なので動く場合のみ）
-    setupComments(videoId);
-
-    // 関連動画（yt-dlpモードではスキップまたは簡易表示）
-    loadRelated(videoId, []);
+    setupComments(videoId);           // Pipedのコメントはそのまま
+    loadRelated(videoId, []);          // 関連はyt-dlpモードではスキップ
 
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
@@ -472,20 +486,27 @@ async function renderWatch(videoId) {
       if (playerSelect.value === 'official') {
         iframe.src = `https://www.youtube.com/embed/${videoId}`;
       } else {
-        // yt-dlp復活: watch.htmlを呼び出して /video エンドポイントでURL取得・再生
+        // yt-dlpで取得したURLを使うためにwatch.htmlへ
         iframe.src = `/watch.html?id=${videoId}`;
       }
     });
 
   } catch (e) {
-    app.innerHTML = `<div style="color:#c00; padding:20px; text-align:center;">
+    console.error('renderWatch error:', e);
+    app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
       <h2>再生ページエラー</h2>
       <p>${escapeHtml(e.message)}</p>
-      <p>yt-dlpで動画URL取得に失敗しました。cookiesを確認するか、公式プレイヤーをお使いください。</p>
+      <p>yt-dlpで再生URLの取得に失敗しました。</p>
+      <p>考えられる原因:</p>
+      <ul style="text-align:left; margin:20px auto; max-width:600px;">
+        <li>youtube-cookies.txtが古い・無効 → 再取得してください</li>
+        <li>yt-dlpのフォーマット指定が合わない → server.jsを確認</li>
+        <li>動画が制限されている（年齢制限など）</li>
+      </ul>
+      <p>公式プレイヤーなら再生可能です。</p>
     </div>`;
   }
 }
-
       // チャンネルページ
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
