@@ -319,140 +319,149 @@ async function pipedFetch(endpoint, params = {}) {
       }
 
       // 動画再生画面
-// 関連動画（Piped依存を避けるため、タイトル検索でフォールバック）
 async function renderWatch(videoId) {
   observerMap.forEach(o => o.disconnect());
   observerMap.clear();
   app.innerHTML = `<div>読み込み中...</div>`;
 
+  let metaData = {};
+  let searchData = null;
+
   try {
-    // 1. メタデータはPipedの軽い検索で取得（/streams を避ける）
-    let metaData = {};
-    try {
-      const searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
-      // 検索結果から該当動画を1件探す（videoId一致）
-      metaData = (searchData || []).find(item => 
-        item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
-      ) || {};
-    } catch (searchErr) {
-      console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
-    }
+    // ホーム・検索・チャンネルと同じように軽いAPIでメタデータ取得
+    searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
 
-    // 2. 再生URLはyt-dlpで取得（watch.html側で処理）
-    const title = metaData.title || `動画（ID: ${videoId}）`;
-    const views = metaData.views || '---';
-    const likes = '---';  // 検索結果にlikesがない場合が多い
-    const uploaded = metaData.uploaded || metaData.uploadedDate || '---';
-    const description = metaData.description || '説明文を取得できませんでした';
-    const chName = metaData.uploaderName || metaData.uploader || '---';
-    const chId = metaData.uploaderUrl?.split('/').pop() || '';
-    const chThumb = metaData.uploaderAvatar || '';
-    const chSubs = metaData.uploaderSubscriberCount || 0;
+    // 配列安全チェック
+    let items = Array.isArray(searchData) ? searchData : 
+                (searchData?.items || searchData?.results || searchData?.videos || []);
 
-    app.innerHTML = `
-      <div class="watch-container">
-        <div class="main-col">
-          <div class="player-box">
-            <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
+    // 該当動画を探す
+    metaData = items.find(item => 
+      item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
+    ) || {};
+
+  } catch (e) {
+    console.warn('Pipedメタデータ取得失敗:', e);
+    // 失敗しても画面は表示させる
+  }
+
+  // メタデータ適用（取れなかったら仮）
+  const title       = metaData.title       || `動画（${videoId}）`;
+  const views       = metaData.views       || '---';
+  const likes       = '---'; // /search にlikesはほぼない
+  const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
+  const description = metaData.description || '説明文を取得できませんでした';
+  const chName      = metaData.uploaderName || metaData.uploader || '---';
+  const chId        = metaData.uploaderUrl?.split('/').pop() || '';
+  const chThumb     = metaData.uploaderAvatar || metaData.thumbnail || '';
+  const chSubs      = metaData.uploaderSubscriberCount || 0;
+
+  app.innerHTML = `
+    <div class="watch-container">
+      <div class="main-col">
+        <div class="player-box">
+          <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
+        </div>
+        <div class="player-meta">
+          <h1>${escapeHtml(title)}</h1>
+          <div class="stats">
+            <div>${fmtNum(views)} 回視聴</div>
+            <div>・</div>
+            <div>${timeAgo(uploaded)}</div>
+            <div style="margin-left:auto;font-weight:700">
+              ${fmtNum(likes)} 👍
+            </div>
+            <select id="playerSelect" style="margin-left:8px">
+              <option value="official" selected>公式プレイヤー</option>
+              <option value="original">オリジナルプレイヤー (yt-dlp)</option>
+            </select>
           </div>
-          <div class="player-meta">
-            <h1>${escapeHtml(title)}</h1>
-            <div class="stats">
-              <div>${fmtNum(views)} 回視聴</div>
-              <div>・</div>
-              <div>${timeAgo(uploaded)}</div>
-              <div style="margin-left:auto;font-weight:700">
-                ${fmtNum(likes)} 👍
+          <div class="channel-row">
+            <img src="${chThumb}" alt="">
+            <div class="ch-info">
+              <div style="font-weight:700">
+                <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
+                  ${escapeHtml(chName)}
+                </a>
               </div>
-              <select id="playerSelect" style="margin-left:8px">
-                <option value="official" selected>公式プレイヤー</option>
-                <option value="original">オリジナルプレイヤー (yt-dlp)</option>
-              </select>
+              <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
             </div>
-            <div class="channel-row">
-              <img src="${chThumb}" alt="">
-              <div class="ch-info">
-                <div style="font-weight:700">
-                  <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
-                    ${escapeHtml(chName)}
-                  </a>
-                </div>
-                <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
-              </div>
-              <div class="btn-sub">登録</div>
-            </div>
-            <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
-            <div class="comments" id="commentsArea">
-              <h3 style="margin-top:12px">コメント</h3>
-              <div id="commentsList"></div>
-              <div id="commentsSentinel" style="height:32px"></div>
-            </div>
+            <div class="btn-sub">登録</div>
+          </div>
+          <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
+          <div class="comments" id="commentsArea">
+            <h3 style="margin-top:12px">コメント</h3>
+            <div id="commentsList"></div>
+            <div id="commentsSentinel" style="height:32px"></div>
           </div>
         </div>
-        <aside class="side-col">
-          <div style="font-weight:700;margin-bottom:8px">次に再生</div>
-          <div id="relatedList"></div>
-        </aside>
       </div>
-    `;
+      <aside class="side-col">
+        <div style="font-weight:700;margin-bottom:8px">次に再生</div>
+        <div id="relatedList"></div>
+      </aside>
+    </div>
+  `;
 
-    // チャンネルリンク
-    const watchChLink = app.querySelector('.watch-ch-link');
-    if (watchChLink) {
-      watchChLink.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        location.hash = `channel=${chId}`;
-      });
-    }
+  // イベントリスナーは要素が存在するかを確認してから
+  const watchChLink = app.querySelector('.watch-ch-link');
+  if (watchChLink) {
+    watchChLink.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (chId) location.hash = `channel=${chId}`;
+    });
+  }
 
-    setupComments(videoId);  // コメントはPipedのまま
+  // コメント（Piped依存なので動く限り）
+  setupComments(videoId);
 
-    // 関連動画：検索結果から関連っぽいものを簡易表示（任意）
-    const container = document.getElementById('relatedList');
-    if (searchData && searchData.length > 1) {
-      container.innerHTML = '';
-      searchData.slice(0, 5).forEach(item => {  // 上位5件
-        const relVid = item.url?.split('v=')[1] || '';
-        if (relVid && relVid !== videoId) {
-          const div = document.createElement('div');
-          div.className = 'related-item';
-          div.innerHTML = `
-            <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
-            <div class="related-info">
-              <div class="title">${escapeHtml(item.title || '')}</div>
-              <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
-            </div>
-          `;
-          div.addEventListener('click', () => location.hash = `watch=${relVid}`);
-          container.appendChild(div);
-        }
-      });
-    } else {
-      container.innerHTML = '<div style="color:#606060">関連動画が見つかりません</div>';
-    }
+  // 関連動画（検索結果から簡易的に使う）
+  const container = document.getElementById('relatedList');
+  if (searchData && Array.isArray(items = searchData.items || [])) {
+    container.innerHTML = '';
+    items.slice(0, 6).forEach(item => {
+      const relVid = item.url?.split('v=')[1] || '';
+      if (relVid && relVid !== videoId) {
+        const div = document.createElement('div');
+        div.className = 'related-item';
+        div.innerHTML = `
+          <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
+          <div class="related-info">
+            <div class="title">${escapeHtml(item.title || '')}</div>
+            <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
+          </div>
+        `;
+        div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+        container.appendChild(div);
+      }
+    });
+  } else {
+    container.innerHTML = '<div style="color:#606060">関連動画なし</div>';
+  }
 
-    const playerSelect = document.getElementById('playerSelect');
-    const iframe = document.getElementById('videoIframe');
-
+  // playerSelect
+  const playerSelect = document.getElementById('playerSelect');
+  const iframe = document.getElementById('videoIframe');
+  if (playerSelect && iframe) {
     playerSelect.addEventListener('change', () => {
       if (playerSelect.value === 'official') {
         iframe.src = `https://www.youtube.com/embed/${videoId}`;
       } else {
-        // 再生URL取得はyt-dlp（watch.html内で /video をfetch）
+        // ここだけyt-dlp！
         iframe.src = `/watch.html?id=${videoId}`;
       }
     });
-
-  } catch (e) {
-    app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
-      <h2>再生ページエラー</h2>
-      <p>${escapeHtml(e.message)}</p>
-      <p>メタデータ取得またはyt-dlpで失敗しました。</p>
-      <p>公式プレイヤーなら再生可能です。</p>
-    </div>`;
   }
+
+} catch (e) {
+  app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
+    <h2>読み込みエラー</h2>
+    <p>${escapeHtml(e.message)}</p>
+    <p>公式プレイヤーなら問題なく見られます。</p>
+  </div>`;
 }
+      
       // チャンネルページ
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
