@@ -44,7 +44,7 @@ app.get("/video", async (req, res) => {
   try {
     // yt-dlp で署名付きURLを取得（cookies必須）
     const output = execSync(
-      `yt-dlp --cookies youtube-cookies.txt --no-check-certificate --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best" https://youtu.be/${videoId}`
+      `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --sleep-requests 1 --user-agent "Mozilla/5.0" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]" https://youtu.be/${videoId}`
     ).toString().trim().split("\n");
 
     const videoUrl = output[0] || "";
