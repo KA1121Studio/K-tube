@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>ホーム</title>
 <link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/1/19/Google_Classroom_Logo.svg">
-<!-- プロキシへのpreconnect/dns-prefetchは不要になったので削除可ですが残してもOK -->
 <link rel="preconnect" href="https://teaching-materials-r4zf.onrender.com">
 <link rel="dns-prefetch" href="https://teaching-materials-r4zf.onrender.com">
 <style>
@@ -84,7 +83,7 @@
     </main>
     <script>
       /* YouTube風シングルファイルデモ（Piped API + yt-dlp再生URL版） */
-      const PIPED_API_BASE = '/piped'; // サーバーのプロキシ経由
+      const PIPED_API_BASE = '/piped';
       const MAX_RESULTS = 12;
       const el = id => document.getElementById(id);
       const app = el('app');
@@ -94,6 +93,8 @@
       let channelThumbCache = {};
       let homeLoading = false;
       let observerMap = new Map();
+
+      // commentsPageToken はここで1回だけ宣言（重複なし）
       let commentsPageToken = {};
 
       function fmtNum(n){
@@ -117,7 +118,7 @@
         return Math.floor(s/31536000)+'年以上前';
       }
 
-      // Piped 用シンプル fetch ラッパー（修正版）
+      // Piped fetch ラッパー
       async function pipedFetch(endpoint, params = {}) {
         let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
         const queryString = new URLSearchParams(params).toString();
@@ -292,8 +293,7 @@
         loadMore();
       }
 
-      // コメント読み込み関数（Piped /comments）
-      let commentsPageToken = {};
+      // コメント読み込み関数（ここに移動して重複宣言を防ぐ）
       async function setupComments(videoId) {
         const list = document.getElementById('commentsList');
         if (!list) return;
@@ -341,7 +341,7 @@
         loadMore();
       }
 
-      // 動画再生画面（完成版）
+      // 動画再生画面
       async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
         observerMap.clear();
@@ -351,7 +351,7 @@
         let searchData = null;
 
         try {
-          // メタデータ取得（Piped /search で軽く）
+          // メタデータ取得
           try {
             searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
             let items = [];
@@ -367,7 +367,6 @@
             console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
           }
 
-          // メタデータ適用
           const title       = metaData.title       || `動画（ID: ${videoId}）`;
           const views       = metaData.views       || '---';
           const likes       = '---';
@@ -435,12 +434,10 @@
             });
           }
 
-          // コメント（setupComments が定義されているか確認）
-          if (typeof setupComments === 'function') {
+          // コメント読み込み
+          const commentsArea = document.getElementById('commentsArea');
+          if (commentsArea && typeof setupComments === 'function') {
             setupComments(videoId);
-          } else {
-            const list = document.getElementById('commentsList');
-            if (list) list.innerHTML = '<div style="color:#606060">コメント機能は利用できません</div>';
           }
 
           // 関連動画
@@ -472,7 +469,7 @@
         }
       }
 
-      // チャンネルページ
+      // チャンネルページ（変更なし）
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
         try {
