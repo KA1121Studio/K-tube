@@ -434,10 +434,50 @@
           }
 
           // 関連動画
-          const relatedList = document.getElementById('relatedList');
-          if (relatedList) {
-            relatedList.innerHTML = '<div style="color:#606060">関連動画は現在表示できません</div>';
-          }
+// renderWatch 内の関連動画部分を置き換え
+const relatedList = document.getElementById('relatedList');
+if (relatedList) {
+  relatedList.innerHTML = '<div>読み込み中...</div>';
+
+  try {
+    // 関連動画の代用: 動画タイトルで検索（metaData.title があれば使う）
+    const searchQuery = metaData.title || videoId; // タイトルが取れなければIDで
+    const relatedData = await pipedFetch('/search', { q: searchQuery, filter: 'videos' });
+
+    let items = [];
+    if (Array.isArray(relatedData)) {
+      items = relatedData;
+    } else if (relatedData && typeof relatedData === 'object') {
+      items = relatedData.items || relatedData.results || relatedData.videos || [];
+    }
+
+    if (items.length > 1) {
+      relatedList.innerHTML = '';
+      // 上位6件を関連として表示（現在の動画を除外）
+      items.slice(0, 6).forEach(item => {
+        const relVid = item.url?.split('v=')[1] || '';
+        if (relVid && relVid !== videoId) {
+          const div = document.createElement('div');
+          div.className = 'related-item';
+          div.innerHTML = `
+            <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
+            <div class="related-info">
+              <div class="title">${escapeHtml(item.title || '')}</div>
+              <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
+            </div>
+          `;
+          div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+          relatedList.appendChild(div);
+        }
+      });
+    } else {
+      relatedList.innerHTML = '<div style="color:#606060">関連動画が見つかりませんでした</div>';
+    }
+  } catch (e) {
+    console.error('関連動画取得失敗:', e);
+    relatedList.innerHTML = '<div style="color:#606060">関連動画は現在取得できません</div>';
+  }
+}
 
           // playerSelect
           const playerSelect = document.getElementById('playerSelect');
