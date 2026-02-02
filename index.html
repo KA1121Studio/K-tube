@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://teaching-materials-r4zf.onrender.com">
 <link rel="dns-prefetch" href="https://teaching-materials-r4zf.onrender.com">
 <style>
-  /* --- 既存のCSSはここにそのまま --- */
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Hiragino Kaku Gothic ProN',Meiryo,sans-serif;background:#fff;color:#111}
   a{color:inherit;text-decoration:none}
@@ -93,8 +92,6 @@
       let channelThumbCache = {};
       let homeLoading = false;
       let observerMap = new Map();
-
-      // commentsPageToken はここで1回だけ宣言（重複なし）
       let commentsPageToken = {};
 
       function fmtNum(n){
@@ -118,7 +115,6 @@
         return Math.floor(s/31536000)+'年以上前';
       }
 
-      // Piped fetch ラッパー
       async function pipedFetch(endpoint, params = {}) {
         let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
         const queryString = new URLSearchParams(params).toString();
@@ -133,7 +129,6 @@
         return response.json();
       }
 
-      // チャンネルサムネイルキャッシュ
       async function getChannelThumbPiped(channelId) {
         if (channelThumbCache[channelId]) return channelThumbCache[channelId];
         try {
@@ -147,7 +142,6 @@
         }
       }
 
-      // ルーティング
       window.addEventListener('hashchange', renderByHash);
       homeBtn.addEventListener('click', () => { location.hash = ''; });
       searchInput.addEventListener('keydown', (e) => {
@@ -169,7 +163,6 @@
         renderHome();
       }
 
-      // ホーム
       function renderHome() {
         app.innerHTML = `
           <section id="homeSection">
@@ -200,7 +193,6 @@
         }
       }
 
-      // カード生成
       async function makeVideoCard(item) {
         const vid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
         const title = item.title || '';
@@ -249,7 +241,6 @@
         observerMap.set('home', io);
       }
 
-      // 検索機能
       async function performSearch(q) {
         if (!q) return renderHome();
         location.hash = `search=${encodeURIComponent(q)}`;
@@ -293,7 +284,8 @@
         loadMore();
       }
 
-      // コメント読み込み関数（ここに移動して重複宣言を防ぐ）
+      // コメント読み込み関数（renderWatchより上に置く）
+      let commentsPageToken = {};
       async function setupComments(videoId) {
         const list = document.getElementById('commentsList');
         if (!list) return;
@@ -341,7 +333,7 @@
         loadMore();
       }
 
-      // 動画再生画面
+      // 再生ページ（説明文・コメント・関連動画を取得）
       async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
         observerMap.clear();
@@ -351,7 +343,7 @@
         let searchData = null;
 
         try {
-          // メタデータ取得
+          // 1. 説明文・関連動画の元データ取得（/searchで軽く）
           try {
             searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
             let items = [];
@@ -367,6 +359,7 @@
             console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
           }
 
+          // 2. メタデータ適用
           const title       = metaData.title       || `動画（ID: ${videoId}）`;
           const views       = metaData.views       || '---';
           const likes       = '---';
@@ -434,19 +427,39 @@
             });
           }
 
-          // コメント読み込み
+          // コメント取得（Piped /comments）
           const commentsArea = document.getElementById('commentsArea');
-          if (commentsArea && typeof setupComments === 'function') {
+          if (commentsArea) {
             setupComments(videoId);
           }
 
-          // 関連動画
+          // 関連動画（/search の結果から簡易取得）
           const relatedList = document.getElementById('relatedList');
           if (relatedList) {
-            relatedList.innerHTML = '<div style="color:#606060">関連動画は現在表示できません</div>';
+            if (searchData && Array.isArray(searchData.items) && searchData.items.length > 1) {
+              relatedList.innerHTML = '';
+              searchData.items.slice(0, 6).forEach(item => {
+                const relVid = item.url?.split('v=')[1] || '';
+                if (relVid && relVid !== videoId) {
+                  const div = document.createElement('div');
+                  div.className = 'related-item';
+                  div.innerHTML = `
+                    <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
+                    <div class="related-info">
+                      <div class="title">${escapeHtml(item.title || '')}</div>
+                      <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
+                    </div>
+                  `;
+                  div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+                  relatedList.appendChild(div);
+                }
+              });
+            } else {
+              relatedList.innerHTML = '<div style="color:#606060">関連動画が見つかりませんでした</div>';
+            }
           }
 
-          // playerSelect
+          // playerSelect（オリジナルでyt-dlp）
           const playerSelect = document.getElementById('playerSelect');
           const iframe = document.getElementById('videoIframe');
           if (playerSelect && iframe) {
