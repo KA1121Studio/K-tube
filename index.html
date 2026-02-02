@@ -83,10 +83,8 @@
       <div class="content" id="app"></div>
     </main>
     <script>
-      /* YouTube風シングルファイルデモ（Piped API 版） */
-
-      const PIPED_API_BASE = '/piped';  // ← これに変更！サーバーのプロキシ経由
-
+      /* YouTube風シングルファイルデモ（Piped API + yt-dlp再生URL版） */
+      const PIPED_API_BASE = '/piped'; // サーバーのプロキシ経由
       const MAX_RESULTS = 12;
       const el = id => document.getElementById(id);
       const app = el('app');
@@ -96,6 +94,7 @@
       let channelThumbCache = {};
       let homeLoading = false;
       let observerMap = new Map();
+      let commentsPageToken = {};
 
       function fmtNum(n){
         if(n==null) return '';
@@ -107,9 +106,8 @@
       }
 
       function timeAgo(dateStr){
-        // PipedのuploadedDateは "X days ago" 形式が多いが、Dateでパース可能なら使う
         const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr; // パース失敗時は生文字列
+        if (isNaN(d.getTime())) return dateStr;
         const s = Math.floor((Date.now()-d.getTime())/1000);
         if(s<60) return s + '秒前';
         if(s<3600) return Math.floor(s/60)+'分前';
@@ -119,31 +117,22 @@
         return Math.floor(s/31536000)+'年以上前';
       }
 
-      // Piped 用シンプル fetch ラッパー
-// Piped 用シンプル fetch ラッパー（修正版）
-async function pipedFetch(endpoint, params = {}) {
-  // endpoint が / で始まっている場合もOKにする
-  let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
-  
-  // クエリパラメータを安全に構築
-  const queryString = new URLSearchParams(params).toString();
-  const fullPath = queryString ? `${path}?${queryString}` : path;
-  
-  // 相対パスで fetch（サーバープロキシ用）
-  const response = await fetch(`${PIPED_API_BASE}${fullPath}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json'
-    }
-  });
+      // Piped 用シンプル fetch ラッパー（修正版）
+      async function pipedFetch(endpoint, params = {}) {
+        let path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+        const queryString = new URLSearchParams(params).toString();
+        const fullPath = queryString ? `${path}?${queryString}` : path;
+        const response = await fetch(`${PIPED_API_BASE}${fullPath}`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) {
+          throw new Error(`Piped proxy error: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      }
 
-  if (!response.ok) {
-    throw new Error(`Piped proxy error: ${response.status} ${response.statusText}`);
-  }
-
-  return response.json();
-}
-      // チャンネルサムネイルキャッシュ（Piped版）
+      // チャンネルサムネイルキャッシュ
       async function getChannelThumbPiped(channelId) {
         if (channelThumbCache[channelId]) return channelThumbCache[channelId];
         try {
@@ -157,7 +146,7 @@ async function pipedFetch(endpoint, params = {}) {
         }
       }
 
-      // ルーティング（変更なし）
+      // ルーティング
       window.addEventListener('hashchange', renderByHash);
       homeBtn.addEventListener('click', () => { location.hash = ''; });
       searchInput.addEventListener('keydown', (e) => {
@@ -179,7 +168,7 @@ async function pipedFetch(endpoint, params = {}) {
         renderHome();
       }
 
-      // ホーム（trending JP）
+      // ホーム
       function renderHome() {
         app.innerHTML = `
           <section id="homeSection">
@@ -199,7 +188,7 @@ async function pipedFetch(endpoint, params = {}) {
         try {
           const data = await pipedFetch('/trending', { region: 'JP' });
           for (const item of data || []) {
-            const card = await makeVideoCard(item);  // 名前はそのまま、内部でPiped対応
+            const card = await makeVideoCard(item);
             grid.appendChild(card);
           }
         } catch (e) {
@@ -210,7 +199,7 @@ async function pipedFetch(endpoint, params = {}) {
         }
       }
 
-      // カード生成（Pipedデータ構造対応）
+      // カード生成
       async function makeVideoCard(item) {
         const vid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
         const title = item.title || '';
@@ -219,7 +208,6 @@ async function pipedFetch(endpoint, params = {}) {
         const chTitle = item.uploaderName || '';
         const views = item.views || 0;
         const publishedAt = item.uploadedDate || item.uploaded || '';
-
         const channelThumb = await getChannelThumbPiped(chId);
 
         const div = document.createElement('div');
@@ -254,7 +242,7 @@ async function pipedFetch(endpoint, params = {}) {
         const sentinel = el('homeSentinel');
         if (!sentinel) return;
         const io = new IntersectionObserver(entries => {
-          entries.forEach(ent => { if (ent.isIntersecting) loadHome(); });  // Pipedはページング弱いので再読込
+          entries.forEach(ent => { if (ent.isIntersecting) loadHome(); });
         }, { rootMargin: '400px' });
         io.observe(sentinel);
         observerMap.set('home', io);
@@ -273,42 +261,28 @@ async function pipedFetch(endpoint, params = {}) {
         `;
         const grid = el('videoGrid');
         let loading = false;
-
         const loadMore = async () => {
-  if (loading) return;
-  loading = true;
-  try {
-    const data = await pipedFetch('/search', { q, filter: 'videos' });
-
-    // ここを修正：dataがオブジェクトの場合、配列部分を取り出す
-    let items = [];
-    if (Array.isArray(data)) {
-      items = data;                     // 直接配列の場合
-    } else if (data && typeof data === 'object') {
-      // よくあるパターン: items, results, または直接配列
-      items = data.items || data.results || data.videos || data || [];
-    } else {
-      items = [];
-    }
-
-    for (const item of items) {
-      const card = await makeVideoCard(item);
-      grid.appendChild(card);
-    }
-
-    // 次ページ対応（もしnextpageがあれば）
-    if (data.nextpage) {
-      // 必要なら次回loadMoreで nextpage を params.nextpage に追加
-      // 今回は簡易的に無視（Pipedのsearchはnextpageが不安定）
-    }
-  } catch (e) {
-    console.error(e);
-    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
-  } finally {
-    loading = false;
-  }
-};
-
+          if (loading) return;
+          loading = true;
+          try {
+            const data = await pipedFetch('/search', { q, filter: 'videos' });
+            let items = [];
+            if (Array.isArray(data)) {
+              items = data;
+            } else if (data && typeof data === 'object') {
+              items = data.items || data.results || data.videos || data || [];
+            }
+            for (const item of items) {
+              const card = await makeVideoCard(item);
+              grid.appendChild(card);
+            }
+          } catch (e) {
+            console.error(e);
+            grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
+          } finally {
+            loading = false;
+          }
+        };
         const sentinel = el('searchSentinel');
         const io = new IntersectionObserver(entries => {
           entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
@@ -318,152 +292,196 @@ async function pipedFetch(endpoint, params = {}) {
         loadMore();
       }
 
-      // 動画再生画面
-async function renderWatch(videoId) {
-  observerMap.forEach(o => o.disconnect());
-  observerMap.clear();
-  app.innerHTML = `<div>読み込み中...</div>`;
-
-  let metaData = {};
-  let searchData = null;
-
-  try {
-    // メタデータ取得（Piped /search で軽く）
-    try {
-      searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
-
-      let items = [];
-      if (Array.isArray(searchData)) {
-        items = searchData;
-      } else if (searchData && typeof searchData === 'object') {
-        items = searchData.items || searchData.results || searchData.videos || [];
+      // コメント読み込み関数（Piped /comments）
+      let commentsPageToken = {};
+      async function setupComments(videoId) {
+        const list = document.getElementById('commentsList');
+        if (!list) return;
+        list.innerHTML = '';
+        commentsPageToken[videoId] = null;
+        let loading = false;
+        const loadMore = async () => {
+          if (loading) return;
+          loading = true;
+          try {
+            const params = { sort_by: 'top' };
+            if (commentsPageToken[videoId]) params.nextpage = commentsPageToken[videoId];
+            const res = await pipedFetch(`/comments/${videoId}`, params);
+            commentsPageToken[videoId] = res.nextpage || null;
+            for (const c of res.comments || []) {
+              const div = document.createElement('div');
+              div.className = 'comment';
+              div.innerHTML = `
+                <img src="${c.authorThumbnails?.[c.authorThumbnails.length-1]?.url || ''}" alt="">
+                <div class="c-body">
+                  <div class="name">${escapeHtml(c.author || '')} ・ <span style="color:#606060;font-size:12px">${timeAgo(c.published || '')}</span></div>
+                  <div class="text">${escapeHtml(c.content || '')}</div>
+                </div>
+              `;
+              list.appendChild(div);
+            }
+            if (!res.comments?.length && !list.innerHTML) {
+              list.innerHTML = '<div style="color:#606060">コメントが存在しないか、非表示</div>';
+            }
+          } catch (e) {
+            console.error('コメント読み込みエラー:', e);
+            list.innerHTML += `<div style="color:#c00">コメント読み込み失敗</div>`;
+          } finally {
+            loading = false;
+          }
+        };
+        const sentinel = document.getElementById('commentsSentinel');
+        if (sentinel) {
+          const io = new IntersectionObserver(entries => {
+            entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
+          }, { rootMargin: '400px' });
+          io.observe(sentinel);
+          observerMap.set(`comments_${videoId}`, io);
+        }
+        loadMore();
       }
 
-      metaData = items.find(item => 
-        item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
-      ) || {};
-    } catch (searchErr) {
-      console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
-    }
+      // 動画再生画面（完成版）
+      async function renderWatch(videoId) {
+        observerMap.forEach(o => o.disconnect());
+        observerMap.clear();
+        app.innerHTML = `<div>読み込み中...</div>`;
 
-    // メタデータ適用（取れなかったら仮）
-    const title       = metaData.title       || `動画（ID: ${videoId}） - yt-dlpモード`;
-    const views       = metaData.views       || '---';
-    const likes       = '---';
-    const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
-    const description = metaData.description || '説明文は現在取得できませんでした';
-    const chName      = metaData.uploaderName || metaData.uploader || '---';
-    const chId        = metaData.uploaderUrl?.split('/').pop() || '';
-    const chThumb     = metaData.uploaderAvatar || metaData.thumbnail || '';
-    const chSubs      = metaData.uploaderSubscriberCount || 0;
+        let metaData = {};
+        let searchData = null;
 
-    // HTMLを生成
-    app.innerHTML = `
-      <div class="watch-container">
-        <div class="main-col">
-          <div class="player-box">
-            <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
-          </div>
-          <div class="player-meta">
-            <h1>${escapeHtml(title)}</h1>
-            <div class="stats">
-              <div>${fmtNum(views)} 回視聴</div>
-              <div>・</div>
-              <div>${timeAgo(uploaded)}</div>
-              <div style="margin-left:auto;font-weight:700">
-                ${fmtNum(likes)} 👍
-              </div>
-              <select id="playerSelect" style="margin-left:8px">
-                <option value="official" selected>公式プレイヤー</option>
-                <option value="original">オリジナルプレイヤー (yt-dlp)</option>
-              </select>
-            </div>
-            <div class="channel-row">
-              <img src="${chThumb}" alt="">
-              <div class="ch-info">
-                <div style="font-weight:700">
-                  <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
-                    ${escapeHtml(chName)}
-                  </a>
+        try {
+          // メタデータ取得（Piped /search で軽く）
+          try {
+            searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
+            let items = [];
+            if (Array.isArray(searchData)) {
+              items = searchData;
+            } else if (searchData && typeof searchData === 'object') {
+              items = searchData.items || searchData.results || searchData.videos || [];
+            }
+            metaData = items.find(item =>
+              item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
+            ) || {};
+          } catch (searchErr) {
+            console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
+          }
+
+          // メタデータ適用
+          const title       = metaData.title       || `動画（ID: ${videoId}）`;
+          const views       = metaData.views       || '---';
+          const likes       = '---';
+          const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
+          const description = metaData.description || '説明文は現在取得できませんでした';
+          const chName      = metaData.uploaderName || metaData.uploader || '---';
+          const chId        = metaData.uploaderUrl?.split('/').pop() || '';
+          const chThumb     = metaData.uploaderAvatar || metaData.thumbnail || '';
+          const chSubs      = metaData.uploaderSubscriberCount || 0;
+
+          app.innerHTML = `
+            <div class="watch-container">
+              <div class="main-col">
+                <div class="player-box">
+                  <iframe id="videoIframe" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;"></iframe>
                 </div>
-                <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
+                <div class="player-meta">
+                  <h1>${escapeHtml(title)}</h1>
+                  <div class="stats">
+                    <div>${fmtNum(views)} 回視聴</div>
+                    <div>・</div>
+                    <div>${timeAgo(uploaded)}</div>
+                    <div style="margin-left:auto;font-weight:700">
+                      ${fmtNum(likes)} 👍
+                    </div>
+                    <select id="playerSelect" style="margin-left:8px">
+                      <option value="official" selected>公式プレイヤー</option>
+                      <option value="original">オリジナルプレイヤー (yt-dlp)</option>
+                    </select>
+                  </div>
+                  <div class="channel-row">
+                    <img src="${chThumb}" alt="">
+                    <div class="ch-info">
+                      <div style="font-weight:700">
+                        <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
+                          ${escapeHtml(chName)}
+                        </a>
+                      </div>
+                      <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
+                    </div>
+                    <div class="btn-sub">登録</div>
+                  </div>
+                  <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
+                  <div class="comments" id="commentsArea">
+                    <h3 style="margin-top:12px">コメント</h3>
+                    <div id="commentsList"></div>
+                    <div id="commentsSentinel" style="height:32px"></div>
+                  </div>
+                </div>
               </div>
-              <div class="btn-sub">登録</div>
+              <aside class="side-col">
+                <div style="font-weight:700;margin-bottom:8px">次に再生</div>
+                <div id="relatedList"></div>
+              </aside>
             </div>
-            <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
-            <div class="comments" id="commentsArea">
-              <h3 style="margin-top:12px">コメント</h3>
-              <div id="commentsList"></div>
-              <div id="commentsSentinel" style="height:32px"></div>
-            </div>
-          </div>
-        </div>
-        <aside class="side-col">
-          <div style="font-weight:700;margin-bottom:8px">次に再生</div>
-          <div id="relatedList"></div>
-        </aside>
-      </div>
-    `;
+          `;
 
-    // 要素が生成されてからイベントを追加（nullチェック）
-    const watchChLink = app.querySelector('.watch-ch-link');
-    if (watchChLink) {
-      watchChLink.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (chId) {
-          location.hash = `channel=${chId}`;
+          // イベント追加（安全に）
+          const watchChLink = app.querySelector('.watch-ch-link');
+          if (watchChLink) {
+            watchChLink.addEventListener('click', e => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (chId) location.hash = `channel=${chId}`;
+            });
+          }
+
+          // コメント（setupComments が定義されているか確認）
+          if (typeof setupComments === 'function') {
+            setupComments(videoId);
+          } else {
+            const list = document.getElementById('commentsList');
+            if (list) list.innerHTML = '<div style="color:#606060">コメント機能は利用できません</div>';
+          }
+
+          // 関連動画
+          const relatedList = document.getElementById('relatedList');
+          if (relatedList) {
+            relatedList.innerHTML = '<div style="color:#606060">関連動画は現在表示できません</div>';
+          }
+
+          // playerSelect
+          const playerSelect = document.getElementById('playerSelect');
+          const iframe = document.getElementById('videoIframe');
+          if (playerSelect && iframe) {
+            playerSelect.addEventListener('change', () => {
+              if (playerSelect.value === 'official') {
+                iframe.src = `https://www.youtube.com/embed/${videoId}`;
+              } else {
+                iframe.src = `/watch.html?id=${videoId}`;
+              }
+            });
+          }
+
+        } catch (e) {
+          console.error('renderWatch error:', e);
+          app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
+            <h2>再生ページエラー</h2>
+            <p>${escapeHtml(e.message)}</p>
+            <p>公式プレイヤーなら再生可能です。</p>
+          </div>`;
         }
-      });
-    }
+      }
 
-    // コメント読み込み
-    const commentsArea = document.getElementById('commentsArea');
-    if (commentsArea) {
-      setupComments(videoId);
-    }
-
-    // 関連動画（簡易）
-    const relatedList = document.getElementById('relatedList');
-    if (relatedList) {
-      relatedList.innerHTML = '<div style="color:#606060">関連動画は現在表示できません</div>';
-    }
-
-    // playerSelect
-    const playerSelect = document.getElementById('playerSelect');
-    const iframe = document.getElementById('videoIframe');
-    if (playerSelect && iframe) {
-      playerSelect.addEventListener('change', () => {
-        if (playerSelect.value === 'official') {
-          iframe.src = `https://www.youtube.com/embed/${videoId}`;
-        } else {
-          iframe.src = `/watch.html?id=${videoId}`;
-        }
-      });
-    }
-
-  } catch (e) {
-    console.error('renderWatch error:', e);
-    app.innerHTML = `<div style="color:#c00; padding:30px; text-align:center;">
-      <h2>再生ページエラー</h2>
-      <p>${escapeHtml(e.message)}</p>
-      <p>公式プレイヤーなら再生可能です。</p>
-    </div>`;
-  }
-}
-      
       // チャンネルページ
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
         try {
           const data = await pipedFetch(`/channel/${channelId}`);
           if (!data || !data.name) throw new Error('チャンネルが見つかりません');
-
           const title = data.name;
           const desc = data.description || '';
           const thumb = data.avatarUrl || '';
           const subs = data.subscriberCount || 0;
-
           app.innerHTML = `
             <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
               <img src="${thumb}" style="width:88px;height:88px;border-radius:50%">
@@ -478,16 +496,13 @@ async function renderWatch(videoId) {
             <div class="video-grid" id="channelVideos"></div>
             <div id="channelSentinel" style="height:32px"></div>
           `;
-
           const grid = el('channelVideos');
           let loading = false;
-
           const loadMore = async () => {
             if (loading) return;
             loading = true;
             try {
-              // Pipedのchannelエンドポイントでvideosが返る（一部インスタンスのみnextpage対応）
-              const chData = await pipedFetch(`/channel/${channelId}`); // 再取得（簡略化）
+              const chData = await pipedFetch(`/channel/${channelId}`);
               for (const v of chData.relatedStreams || chData.videos || []) {
                 const card = await makeVideoCard(v);
                 grid.appendChild(card);
@@ -499,7 +514,6 @@ async function renderWatch(videoId) {
               loading = false;
             }
           };
-
           const sentinel = el('channelSentinel');
           const io = new IntersectionObserver(entries => {
             entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
@@ -543,7 +557,6 @@ async function renderWatch(videoId) {
       input.addEventListener('keydown', e => {
         if(e.key === 'Enter') btn.click();
       });
-
       window.addEventListener('load', () => {
         fetch('https://teaching-materials-r4zf.onrender.com/', { mode: 'no-cors' }).catch(()=>{});
         fetch('https://teaching-materials-r4zf.onrender.com/watch.html?id=dummy', { mode: 'no-cors' }).catch(()=>{});
