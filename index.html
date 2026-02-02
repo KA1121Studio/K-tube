@@ -92,6 +92,8 @@
       let channelThumbCache = {};
       let homeLoading = false;
       let observerMap = new Map();
+
+      // commentsPageToken はここで1回だけ宣言（重複なし）
       let commentsPageToken = {};
 
       function fmtNum(n){
@@ -284,8 +286,7 @@
         loadMore();
       }
 
-      // コメント読み込み関数（renderWatchより上に置く）
-      let commentsPageToken = {};
+      // コメント読み込み関数（重複宣言を削除）
       async function setupComments(videoId) {
         const list = document.getElementById('commentsList');
         if (!list) return;
@@ -333,7 +334,7 @@
         loadMore();
       }
 
-      // 再生ページ（説明文・コメント・関連動画を取得）
+      // 動画再生画面
       async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
         observerMap.clear();
@@ -343,7 +344,7 @@
         let searchData = null;
 
         try {
-          // 1. 説明文・関連動画の元データ取得（/searchで軽く）
+          // メタデータ取得
           try {
             searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
             let items = [];
@@ -359,7 +360,6 @@
             console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
           }
 
-          // 2. メタデータ適用
           const title       = metaData.title       || `動画（ID: ${videoId}）`;
           const views       = metaData.views       || '---';
           const likes       = '---';
@@ -417,7 +417,7 @@
             </div>
           `;
 
-          // イベント追加（安全に）
+          // イベント追加
           const watchChLink = app.querySelector('.watch-ch-link');
           if (watchChLink) {
             watchChLink.addEventListener('click', e => {
@@ -427,39 +427,19 @@
             });
           }
 
-          // コメント取得（Piped /comments）
+          // コメント読み込み
           const commentsArea = document.getElementById('commentsArea');
           if (commentsArea) {
             setupComments(videoId);
           }
 
-          // 関連動画（/search の結果から簡易取得）
+          // 関連動画
           const relatedList = document.getElementById('relatedList');
           if (relatedList) {
-            if (searchData && Array.isArray(searchData.items) && searchData.items.length > 1) {
-              relatedList.innerHTML = '';
-              searchData.items.slice(0, 6).forEach(item => {
-                const relVid = item.url?.split('v=')[1] || '';
-                if (relVid && relVid !== videoId) {
-                  const div = document.createElement('div');
-                  div.className = 'related-item';
-                  div.innerHTML = `
-                    <div class="related-thumb"><img src="${item.thumbnail || ''}" alt=""></div>
-                    <div class="related-info">
-                      <div class="title">${escapeHtml(item.title || '')}</div>
-                      <div style="color:#606060;font-size:13px">${escapeHtml(item.uploaderName || '')} ・ ${fmtNum(item.views || 0)} 回</div>
-                    </div>
-                  `;
-                  div.addEventListener('click', () => location.hash = `watch=${relVid}`);
-                  relatedList.appendChild(div);
-                }
-              });
-            } else {
-              relatedList.innerHTML = '<div style="color:#606060">関連動画が見つかりませんでした</div>';
-            }
+            relatedList.innerHTML = '<div style="color:#606060">関連動画は現在表示できません</div>';
           }
 
-          // playerSelect（オリジナルでyt-dlp）
+          // playerSelect
           const playerSelect = document.getElementById('playerSelect');
           const iframe = document.getElementById('videoIframe');
           if (playerSelect && iframe) {
@@ -482,7 +462,6 @@
         }
       }
 
-      // チャンネルページ（変更なし）
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
         try {
