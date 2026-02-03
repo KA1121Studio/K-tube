@@ -291,53 +291,85 @@
       }
 
       // コメント読み込み関数（重複宣言を削除）
-      async function setupComments(videoId) {
-        const list = document.getElementById('commentsList');
-        if (!list) return;
-        list.innerHTML = '';
-        commentsPageToken[videoId] = null;
-        let loading = false;
-        const loadMore = async () => {
-          if (loading) return;
-          loading = true;
-          try {
-            const params = { sort_by: 'top' };
-            if (commentsPageToken[videoId]) params.nextpage = commentsPageToken[videoId];
-            const res = await pipedFetch(`/comments/${videoId}`, params);
-            commentsPageToken[videoId] = res.nextpage || null;
-            for (const c of res.comments || []) {
-              const div = document.createElement('div');
-              div.className = 'comment';
-              div.innerHTML = `
-                <img src="${c.authorThumbnails?.[c.authorThumbnails.length-1]?.url || ''}" alt="">
-                <div class="c-body">
-                  <div class="name">${escapeHtml(c.author || '')} ・ <span style="color:#606060;font-size:12px">${timeAgo(c.published || '')}</span></div>
-                  <div class="text">${escapeHtml(c.content || '')}</div>
-                </div>
-              `;
-              list.appendChild(div);
-            }
-            if (!res.comments?.length && !list.innerHTML) {
-              list.innerHTML = '<div style="color:#606060">コメントが存在しないか、非表示</div>';
-            }
-          } catch (e) {
-            console.error('コメント読み込みエラー:', e);
-            list.innerHTML += `<div style="color:#c00">コメント読み込み失敗</div>`;
-          } finally {
-            loading = false;
-          }
-        };
-        const sentinel = document.getElementById('commentsSentinel');
-        if (sentinel) {
-          const io = new IntersectionObserver(entries => {
-            entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
-          }, { rootMargin: '400px' });
-          io.observe(sentinel);
-          observerMap.set(`comments_${videoId}`, io);
-        }
-        loadMore();
+     async function setupComments(videoId) {
+  const list = document.getElementById('commentsList');
+  if (!list) {
+    console.error('commentsList が見つかりません');
+    return;
+  }
+
+  // 毎回リセット
+  list.innerHTML = '<div style="padding: 16px; text-align: center; color: #606060;">コメントを読み込んでいます...</div>';
+
+  commentsPageToken[videoId] = null;
+  let loading = false;
+  let hasMore = true;
+
+  const loadMore = async () => {
+    if (loading || !hasMore) return;
+    loading = true;
+
+    try {
+      const params = { sort_by: 'top' };
+      if (commentsPageToken[videoId]) {
+        params.nextpage = commentsPageToken[videoId];
       }
 
+      const res = await pipedFetch(`/comments/${videoId}`, params);
+      console.log(`[${videoId}] コメントAPIレスポンス:`, res);  // ← ブラウザコンソールで確認！
+
+      commentsPageToken[videoId] = res.nextpage || null;
+      hasMore = !!res.nextpage;
+
+      // 読み込み中をクリア（重要！）
+      if (list.innerHTML.includes('読み込んでいます')) {
+        list.innerHTML = '';
+      }
+
+      if (res.comments && res.comments.length > 0) {
+        res.comments.forEach(c => {
+          const thumb = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
+          const div = document.createElement('div');
+          div.className = 'comment';
+          div.innerHTML = `
+            <img src="${thumb}" alt="" style="width:36px;height:36px;border-radius:50%;" onerror="this.style.display='none';">
+            <div class="c-body">
+              <div class="name">${escapeHtml(c.author || '匿名ユーザー')} ・ <span style="color:#606060;font-size:12px">${timeAgo(c.published || '')}</span></div>
+              <div class="text" style="white-space: pre-wrap; word-break: break-word;">${escapeHtml(c.content?.trim() || '(内容がありません)')}</div>
+            </div>
+          `;
+          list.appendChild(div);
+        });
+      } else if (list.children.length === 0) {
+        list.innerHTML = '<div style="padding: 16px; text-align: center; color: #606060;">この動画にコメントはありません（または非表示設定されています）</div>';
+      }
+
+    } catch (e) {
+      console.error('コメント取得エラー:', e);
+      list.innerHTML += `<div style="color:#c00; padding:8px;">読み込みエラー: ${escapeHtml(e.message)}</div>`;
+    } finally {
+      loading = false;
+    }
+  };
+
+  // 初回ロード
+  await loadMore();
+
+  // スクロール監視（rootを.commentsに指定で精度UP）
+  const sentinel = document.getElementById('commentsSentinel');
+  if (sentinel) {
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        loadMore();
+      }
+    }, {
+      root: list.parentElement,  // .comments をrootに
+      rootMargin: '300px 0px'    // 少し広め
+    });
+    io.observe(sentinel);
+    observerMap.set(`comments_${videoId}`, io);
+  }
+}
       // 動画再生画面
       async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
