@@ -315,25 +315,32 @@ async function setupComments(videoId) {
       }
 
       const res = await pipedFetch(`/comments/${videoId}`, params);
-      console.log(`コメント取得 (${videoId}):`, res);  // デバッグ用（必要なくなったら削除可）
+      console.log(`コメント取得 (${videoId}):`, res); // デバッグ用（本番では削除可）
 
       commentsPageToken[videoId] = res.nextpage || null;
       hasMore = !!res.nextpage && res.nextpage !== null;
 
-      // 読み込み中表示をクリア
+      // 読み込み中表示をクリア（初回のみ）
       if (list.innerHTML.includes('読み込んでいます')) {
         list.innerHTML = '';
       }
 
       if (res.comments && res.comments.length > 0) {
         res.comments.forEach(c => {
-          const thumbUrl = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
+          let thumbUrl = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
+
+          // プロキシ経由にする（空ならデフォルト画像）
+          const proxiedThumb = thumbUrl && (thumbUrl.includes('yt3.ggpht.com') || thumbUrl.includes('googleusercontent.com') || thumbUrl.includes('proxy.piped'))
+            ? `/thumb-proxy?url=${encodeURIComponent(thumbUrl)}`
+            : 'https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';
+
           const div = document.createElement('div');
           div.className = 'comment';
           div.innerHTML = `
-            <img src="${thumbUrl}" alt="" 
+            <img src="${proxiedThumb}" alt=""
                  style="width:40px; height:40px; border-radius:50%; object-fit: cover; flex-shrink:0;"
-                 onerror="this.src='https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';">
+                 loading="lazy"
+                 onerror="this.src='https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png'; this.onerror=null;">
             <div class="c-body">
               <div class="name" style="display:flex; align-items:center; gap:6px; font-size:13px;">
                 <span style="font-weight:500;">${escapeHtml(c.author || '匿名ユーザー')}</span>
@@ -350,7 +357,7 @@ async function setupComments(videoId) {
         });
       }
 
-      // コメントが0件で何も表示されていない場合
+      // コメント0件かつこれ以上ない場合の表示
       if (list.children.length === 0 && !hasMore) {
         list.innerHTML = '<div style="padding: 20px; text-align: center; color: #606060; font-size:14px;">コメントは非表示に設定されているか、コメントがありません</div>';
       }
@@ -366,7 +373,7 @@ async function setupComments(videoId) {
   // 初回読み込み
   await loadMore();
 
-  // 無限スクロール（YouTube風に自然に発火するよう調整）
+  // 無限スクロール（sentinel監視）
   const sentinel = document.getElementById('commentsSentinel');
   if (sentinel) {
     const io = new IntersectionObserver(entries => {
@@ -374,8 +381,8 @@ async function setupComments(videoId) {
         loadMore();
       }
     }, {
-      root: document.querySelector('.comments'),  // .comments 要素をスクロールコンテナとして指定
-      rootMargin: '400px 0px 200px 0px'           // 下方向に余裕を持たせて自然にロード
+      root: document.querySelector('.comments'),
+      rootMargin: '400px 0px 200px 0px'
     });
     io.observe(sentinel);
     observerMap.set(`comments_${videoId}`, io);
