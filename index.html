@@ -297,8 +297,8 @@ async function setupComments(videoId) {
     return;
   }
 
-  // 初期表示：読み込み中メッセージ
-  list.innerHTML = '<div style="padding: 16px; text-align: center; color: #606060;">コメントを読み込んでいます...</div>';
+  // 初期表示（YouTube風のシンプルな読み込み中）
+  list.innerHTML = '<div style="padding: 20px; text-align: center; color: #606060;">コメントを読み込んでいます...</div>';
 
   commentsPageToken[videoId] = null;
   let loading = false;
@@ -315,13 +315,15 @@ async function setupComments(videoId) {
       }
 
       const res = await pipedFetch(`/comments/${videoId}`, params);
-      console.log(`コメント取得結果 (${videoId}):`, res);  // デバッグ用ログ（ブラウザコンソールで確認）
+      console.log(`コメント取得 (${videoId}):`, res);  // デバッグ用（必要なくなったら削除可）
 
       commentsPageToken[videoId] = res.nextpage || null;
       hasMore = !!res.nextpage && res.nextpage !== null;
 
-      // 読み込み中メッセージをクリア（重要）
-      list.innerHTML = list.innerHTML.includes('読み込んでいます') ? '' : list.innerHTML;
+      // 読み込み中表示をクリア
+      if (list.innerHTML.includes('読み込んでいます')) {
+        list.innerHTML = '';
+      }
 
       if (res.comments && res.comments.length > 0) {
         res.comments.forEach(c => {
@@ -329,13 +331,17 @@ async function setupComments(videoId) {
           const div = document.createElement('div');
           div.className = 'comment';
           div.innerHTML = `
-            <img src="${thumbUrl}" alt="" onerror="this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';">
+            <img src="${thumbUrl}" alt="" 
+                 style="width:40px; height:40px; border-radius:50%; object-fit: cover; flex-shrink:0;"
+                 onerror="this.src='https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';">
             <div class="c-body">
-              <div class="name">
-                ${escapeHtml(c.author || '匿名')} 
-                ・ <span style="color:#606060;font-size:12px">${timeAgo(c.commentedTime || '')}</span>
+              <div class="name" style="display:flex; align-items:center; gap:6px; font-size:13px;">
+                <span style="font-weight:500;">${escapeHtml(c.author || '匿名ユーザー')}</span>
+                <span style="color:#606060; font-size:12px;">
+                  ${timeAgo(c.commentedTime || '')}
+                </span>
               </div>
-              <div class="text" style="white-space: pre-wrap; word-break: break-word;">
+              <div class="text" style="margin-top:4px; line-height:1.4; font-size:14px; white-space: pre-wrap; word-break: break-word; color:#0f0f0f;">
                 ${escapeHtml(c.commentText?.trim() || '(内容がありません)')}
               </div>
             </div>
@@ -344,23 +350,23 @@ async function setupComments(videoId) {
         });
       }
 
-      // コメントが全くない場合のフォールバック
+      // コメントが0件で何も表示されていない場合
       if (list.children.length === 0 && !hasMore) {
-        list.innerHTML = '<div style="padding: 16px; text-align: center; color: #606060;">コメントがありません（または非表示です）</div>';
+        list.innerHTML = '<div style="padding: 20px; text-align: center; color: #606060; font-size:14px;">コメントは非表示に設定されているか、コメントがありません</div>';
       }
 
     } catch (e) {
       console.error('コメント読み込みエラー:', e);
-      list.innerHTML += `<div style="color:#c00; padding:8px;">エラー: ${escapeHtml(e.message)}</div>`;
+      list.innerHTML += `<div style="color:#c00; padding:12px; font-size:14px;">コメントの読み込みに失敗しました</div>`;
     } finally {
       loading = false;
     }
   };
 
-  // 初回読み込みを実行
+  // 初回読み込み
   await loadMore();
 
-  // スクロールで続きをロード（sentinelが見えたら）
+  // 無限スクロール（YouTube風に自然に発火するよう調整）
   const sentinel = document.getElementById('commentsSentinel');
   if (sentinel) {
     const io = new IntersectionObserver(entries => {
@@ -368,8 +374,8 @@ async function setupComments(videoId) {
         loadMore();
       }
     }, {
-      root: list.parentElement,          // .comments を監視対象に
-      rootMargin: '300px 0px 300px 0px'  // 上下に余裕を持たせて発火しやすく
+      root: document.querySelector('.comments'),  // .comments 要素をスクロールコンテナとして指定
+      rootMargin: '400px 0px 200px 0px'           // 下方向に余裕を持たせて自然にロード
     });
     io.observe(sentinel);
     observerMap.set(`comments_${videoId}`, io);
