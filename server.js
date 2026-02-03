@@ -98,25 +98,40 @@ app.get("/proxy", async (req, res) => {
 });
 
 
+// server.js に追加（既存の /proxy や他のルートの後でOK）
+
 app.get("/thumb-proxy", async (req, res) => {
   const url = req.query.url;
-  if (!url || !url.includes("yt3.ggpht.com") && !url.includes("proxy.piped")) {
+
+  // 安全のため、許可するオリジンのみを通過させる
+  if (!url || 
+      (!url.includes("yt3.ggpht.com") && 
+       !url.includes("lh3.googleusercontent.com") && 
+       !url.includes("proxy.piped"))) {
     return res.status(400).send("Invalid thumbnail URL");
   }
+
   try {
     const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      }
     });
-    if (!response.ok) throw new Error(`Thumbnail fetch failed: ${response.status}`);
-    
+
+    if (!response.ok) {
+      throw new Error(`Thumbnail fetch failed: ${response.status}`);
+    }
+
     const headers = {
       "Content-Type": response.headers.get("content-type") || "image/webp",
-      "Cache-Control": "public, max-age=86400"  // 1日キャッシュ
+      "Cache-Control": "public, max-age=86400",  // 1日キャッシュ
+      "Access-Control-Allow-Origin": "*"        // 必要に応じて（CORS対策）
     };
+
     res.writeHead(response.status, headers);
     response.body.pipe(res);
   } catch (err) {
-    console.error("Thumb proxy error:", err);
+    console.error("Thumb proxy error:", err.message);
     res.status(500).send("Failed to proxy thumbnail");
   }
 });
