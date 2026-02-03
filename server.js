@@ -97,6 +97,30 @@ app.get("/proxy", async (req, res) => {
   }
 });
 
+
+app.get("/thumb-proxy", async (req, res) => {
+  const url = req.query.url;
+  if (!url || !url.includes("yt3.ggpht.com") && !url.includes("proxy.piped")) {
+    return res.status(400).send("Invalid thumbnail URL");
+  }
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    if (!response.ok) throw new Error(`Thumbnail fetch failed: ${response.status}`);
+    
+    const headers = {
+      "Content-Type": response.headers.get("content-type") || "image/webp",
+      "Cache-Control": "public, max-age=86400"  // 1日キャッシュ
+    };
+    res.writeHead(response.status, headers);
+    response.body.pipe(res);
+  } catch (err) {
+    console.error("Thumb proxy error:", err);
+    res.status(500).send("Failed to proxy thumbnail");
+  }
+});
+
 // HLS用プロキシ（必要なら拡張）
 app.get("/proxy-hls", async (req, res) => {
   const url = req.query.url;
