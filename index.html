@@ -375,6 +375,7 @@ async function setupComments(videoId) {
     observerMap.set(`comments_${videoId}`, io);
   }
 }
+     
       // 動画再生画面
       async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
