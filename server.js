@@ -194,6 +194,41 @@ app.get('/piped/*', async (req, res) => {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
       });
+      
+// streams 専用プロキシ（フロント用・証明書/CORS回避）
+app.get('/piped-streams/:id', async (req, res) => {
+  const videoId = req.params.id;
+
+  const streamBases = [
+    'https://api.piped.private.coffee',
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.tokhmi.xyz'
+  ];
+
+  for (const base of streamBases) {
+    const url = `${base}/streams/${videoId}`;
+    try {
+      const r = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
+
+      if (r.ok) {
+        res.setHeader('Content-Type', 'application/json');
+        return r.body.pipe(res);
+      } else {
+        console.log('streams proxy failed', base, r.status);
+      }
+    } catch (e) {
+      console.log('streams proxy error', base, e.message);
+    }
+  }
+
+  res.status(503).json({ error: 'All streams instances failed' });
+});
+   
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');
