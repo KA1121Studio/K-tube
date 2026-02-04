@@ -15,6 +15,7 @@
 <audio id="audio" style="display:none"></audio>
 
 <script>
+const mode = params.get("mode") || "default";
 const params = new URLSearchParams(window.location.search);
 const videoId = params.get("id");
 const videoEl = document.getElementById("video");
@@ -23,7 +24,10 @@ const audioEl = document.getElementById("audio");
 if (!videoId) {
   alert("動画IDが必要です");
 } else {
-  fetch(`/video?id=${videoId}`)
+  const api = mode === "360" ? "/video360" : "/video";
+
+fetch(`${api}?id=${videoId}`)
+
     .then(res => res.json())
     .then(data => {
       if (!data.video || !data.audio) {
