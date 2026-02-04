@@ -419,32 +419,15 @@ if (res.comments && res.comments.length > 0) {
 
 
 // 説明文だけ streams API から取得（複数インスタンスでリトライ）
+// 説明文だけ streams API から取得（server経由）
 let streamsDesc = '';
 
-const streamBases = [
-  'https://api.piped.private.coffee',
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.tokhmi.xyz'
-];
-
-for (const base of streamBases) {
-  try {
-    const streamsRes = await fetch(
-      base + '/streams/' + videoId,
-      { headers: { 'Accept': 'application/json' } }
-    );
-
-    if (streamsRes.ok) {
-      const streamsData = await streamsRes.json();
-      streamsDesc = streamsData.description || '';
-      console.log('streams 説明文取得成功 from:', base);
-      break; // 成功したら抜ける
-    } else {
-      console.warn('streams 失敗', base, 'status:', streamsRes.status);
-    }
-  } catch (e) {
-    console.warn('streams エラー', base, e);
-  }
+try {
+  const streamsData = await pipedFetch(`/piped-streams/${videoId}`);
+  streamsDesc = streamsData.description || '';
+} catch (e) {
+  console.warn('説明文取得失敗（piped-streams）:', e);
+  streamsDesc = '';
 }
 
 
