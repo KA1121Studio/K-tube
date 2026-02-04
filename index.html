@@ -418,9 +418,10 @@ if (res.comments && res.comments.length > 0) {
           }
 
 
-// 説明文だけ streams API から取得（server経由・正解版）
+// 説明文だけ streams → 失敗したら yt-dlp にフォールバック（最強構成）
 let streamsDesc = '';
 
+// 1. まず Piped streams を試す
 try {
   const streamsRes = await fetch(`/piped-streams/${videoId}`);
   if (streamsRes.ok) {
@@ -428,11 +429,25 @@ try {
     streamsDesc = streamsData.description || '';
   } else {
     console.warn('piped-streams status:', streamsRes.status);
-    streamsDesc = '';
   }
 } catch (e) {
-  console.warn('説明文取得失敗（piped-streams fetch）:', e);
-  streamsDesc = '';
+  console.warn('piped-streams fetch error:', e);
+}
+
+// 2. ダメなら yt-dlp から取得（最終手段）
+if (!streamsDesc) {
+  try {
+    const ytRes = await fetch(`/yt-desc/${videoId}`);
+    if (ytRes.ok) {
+      const ytData = await ytRes.json();
+      streamsDesc = ytData.description || '';
+      console.log('説明文 yt-dlp から取得成功');
+    } else {
+      console.warn('yt-desc status:', ytRes.status);
+    }
+  } catch (e) {
+    console.warn('yt-desc fetch error:', e);
+  }
 }
 
 
