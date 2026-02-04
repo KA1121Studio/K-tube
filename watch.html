@@ -91,29 +91,33 @@ mediaSource.addEventListener('sourceopen', async () => {
       });
     };
 
-    const fetchAndAppend = async (buffer, url) => {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`フェッチ失敗: ${response.status}`);
-        
-        const arrayBuffer = await response.arrayBuffer();
-        buffer.appendBuffer(arrayBuffer);
+const fetchAndAppend = async (buffer, url) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`フェッチ失敗: ${response.status}`);
+    
+    const arrayBuffer = await response.arrayBuffer();
+    buffer.appendBuffer(arrayBuffer);
 
-        // 最後ならendOfStream
-        buffer.addEventListener('updateend', () => {
-          if (!buffer.updating && mediaSource.readyState === 'open') {
-            // 両方終わったら
-            if (!videoSourceBuffer.updating && !audioSourceBuffer.updating) {
-              mediaSource.endOfStream();
-            }
-          }
-        }, { once: true });
-      } catch (err) {
-        console.error(err);
-        showError("ストリーム読み込みエラー: " + err.message);
-        mediaSource.endOfStream('error');
+    // 更新終了時にチェック
+    buffer.addEventListener('updateend', () => {
+      if (!buffer.updating && mediaSource.readyState === 'open') {
+        // 両方のSourceBufferが更新中でない → 終了
+        if (!videoSourceBuffer.updating && !audioSourceBuffer.updating) {
+          mediaSource.endOfStream();  // ← ここを無引数に！
+        }
       }
-    };
+    }, { once: true });
+
+  } catch (err) {
+    console.error(err);
+    showError("ストリーム読み込みエラー: " + err.message);
+    
+    if (mediaSource.readyState === 'open') {
+      mediaSource.endOfStream('network');  // ← ここは 'network' に変更（または無引数）
+    }
+  }
+};
 
     // 並列でフェッチ＆アペンド（順不同でOK、MSEが内部で同期）
     await Promise.all([
