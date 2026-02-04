@@ -44,14 +44,7 @@ app.get("/video", async (req, res) => {
   try {
     // yt-dlp で署名付きURLを取得（cookies必須）
     const output = execSync(
-     `yt-dlp --cookies youtube-cookies.txt \
- --js-runtimes node \
- --remote-components ejs:github \
- --sleep-requests 1 \
- --user-agent "Mozilla/5.0" \
- --get-url \
- -f "best[ext=mp4][height<=360]/best[ext=mp4]/best" \
- https://youtu.be/${videoId}`
+      `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --sleep-requests 1 --user-agent "Mozilla/5.0" --get-url -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]" https://youtu.be/${videoId}`
     ).toString().trim().split("\n");
 
     const videoUrl = output[0] || "";
@@ -77,31 +70,39 @@ app.get("/video", async (req, res) => {
   }
 });
 
-app.get('/yt-desc/:id', async (req, res) => {
-  const videoId = req.params.id;
+// ★ 360p・音声＋映像 合体（progressive）
+app.get("/video360", async (req, res) => {
+  const videoId = req.query.id;
+  if (!videoId) return res.status(400).json({ error: "video id required" });
 
   try {
-    const json = execSync(
-      `yt-dlp --cookies youtube-cookies.txt --user-agent "Mozilla/5.0" -J https://youtu.be/${videoId}`,
-      { encoding: 'utf8' }
-    );
+    const output = execSync(
+      `yt-dlp --cookies youtube-cookies.txt \
+--js-runtimes node \
+--remote-components ejs:github \
+--sleep-requests 1 \
+--user-agent "Mozilla/5.0" \
+--get-url \
+-f "best[ext=mp4][height<=360]/best[ext=mp4]/best" \
+https://youtu.be/${videoId}`
+    ).toString().trim();
 
-    const data = JSON.parse(json);
+    if (!output) throw new Error("No valid 360p stream");
 
     res.json({
-      description: data.description || ''
+      video: output,
+      audio: output,
+      source: "yt-dlp-360p-progressive"
     });
 
   } catch (e) {
-    console.error('yt-desc error FULL:', e);
+    console.error("yt-dlp 360p error:", e.message);
     res.status(500).json({
-      error: e.message,
-      stderr: e.stderr?.toString(),
-      stdout: e.stdout?.toString()
+      error: "failed_to_extract_video_360",
+      message: e.message
     });
   }
 });
-
 
 
 // プロキシ（動画チャンク配信用） ← 重要！これがないと403エラー多発
@@ -215,43 +216,6 @@ const pipedInstances = [
   'https://pipedapi.tokhmi.xyz'
 ];
 
-
-      
-// streams 専用プロキシ（フロント用・証明書/CORS回避）
-// streams 専用プロキシ（フロント用・証明書/CORS回避）
-app.get('/piped-streams/:id', async (req, res) => {
-  const videoId = req.params.id;
-
-  const streamBases = [
-    'https://api.piped.private.coffee',
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.tokhmi.xyz'
-  ];
-
-  for (const base of streamBases) {
-    const url = `${base}/streams/${videoId}`;
-    try {
-      const r = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0'
-        }
-      });
-
-      if (r.ok) {
-        res.setHeader('Content-Type', 'application/json');
-        return r.body.pipe(res);
-      } else {
-        console.log('streams proxy failed', base, r.status);
-      }
-    } catch (e) {
-      console.log('streams proxy error', base, e.message);
-    }
-  }
-
-  res.status(503).json({ error: 'All streams instances failed' });
-});
-
 app.get('/piped/*', async (req, res) => {
   const path = req.path.replace('/piped', '');
   const query = new URLSearchParams(req.query).toString();
@@ -262,7 +226,7 @@ app.get('/piped/*', async (req, res) => {
       const response = await fetch(targetUrl, {
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
       });
 
@@ -271,7 +235,6 @@ app.get('/piped/*', async (req, res) => {
         res.setHeader('Content-Type', contentType || 'application/json');
         return response.body.pipe(res);
       }
-
       console.log(`Instance ${base} failed with ${response.status}`);
     } catch (e) {
       console.error(`Instance ${base} error:`, e.message);
@@ -280,9 +243,6 @@ app.get('/piped/*', async (req, res) => {
 
   res.status(503).json({ error: 'All Piped instances failed' });
 });
-
-
-
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
