@@ -244,6 +244,44 @@ app.get('/piped/*', async (req, res) => {
   res.status(503).json({ error: 'All Piped instances failed' });
 });
 
+app.get("/download", async (req, res) => {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).send("URL required");
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    if (!response.ok) {
+      console.error("Download fetch failed:", response.status);
+      return res.status(response.status).send("Download fetch failed");
+    }
+
+    // 強制ダウンロード
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="video_360p.mp4"'
+    );
+
+    res.setHeader(
+      "Content-Type",
+      response.headers.get("content-type") || "video/mp4"
+    );
+
+    response.body.pipe(res);
+
+  } catch (err) {
+    console.error("Download proxy error:", err);
+    res.status(500).send("Download failed");
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
