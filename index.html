@@ -329,9 +329,9 @@ if (res.comments && res.comments.length > 0) {
   res.comments.forEach(c => {
     let thumbUrl = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
     
-    // thumbUrlが有効ならサーバープロキシ経由、それ以外デフォルト
-    const proxiedThumb = thumbUrl && thumbUrl.startsWith('https://proxy.piped.')
-      ? `/thumb-proxy?url=${encodeURIComponent(thumbUrl)}&videoId=${videoId}`
+    // Pipedのproxy URLだけサーバープロキシ経由（他のURLはそのまま）
+    const proxiedThumb = thumbUrl && thumbUrl.includes('proxy.piped.private.coffee')
+      ? `/thumb-proxy?url=${encodeURIComponent(thumbUrl)}`
       : 'https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';
 
     const div = document.createElement('div');
@@ -341,6 +341,7 @@ if (res.comments && res.comments.length > 0) {
            style="width:40px; height:40px; border-radius:50%; object-fit: cover; flex-shrink:0;"
            loading="lazy"
            referrerpolicy="no-referrer"
+           crossorigin="anonymous"  // ← 追加推奨: CORSリクエストとして扱う
            onerror="this.src='https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png'; this.onerror=null;">
       <div class="c-body">
         <div class="name" style="display:flex; align-items:center; gap:6px; font-size:13px;">
