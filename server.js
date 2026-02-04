@@ -102,52 +102,61 @@ app.get("/proxy", async (req, res) => {
 
 app.get("/thumb-proxy", async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).send("URL required");
+  if (!url) {
+    console.log("Thumb proxy: No URL provided");
+    return res.status(400).send("URL required");
+  }
 
-  // 許可ホスト（private.coffee対応）
+  console.log(`Thumb proxy requested for: ${url}`); // ← ログ追加でデバッグしやすく
+
+  // 許可ホスト（private.coffee必須）
   const allowedHosts = [
-    'yt3.ggpht.com',
-    'ggpht.com',
-    'googleusercontent.com',
-    'pipedproxy',
-    'private.coffee',
-    'kavin.rocks'
+    'yt3.ggpht.com', 'ggpht.com', 'googleusercontent.com',
+    'pipedproxy', 'private.coffee', 'kavin.rocks'
   ];
 
   try {
     const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-    if (!allowedHosts.some(h => hostname.includes(h))) {
+    if (!allowedHosts.some(h => urlObj.hostname.includes(h))) {
+      console.log(`Thumb proxy: Invalid host ${urlObj.hostname}`);
       return res.status(403).send("Invalid thumbnail host");
     }
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.youtube.com/watch?v=dummy-video",  // ← これが大事！YouTubeページ由来に見せる
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": "https://www.youtube.com/watch?v=" + (req.query.videoId || "dummy"),  // 動画IDがあれば使う
         "Origin": "https://www.youtube.com",
-        "Accept": "image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9"
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Dest": "image"
       },
-      redirect: 'follow'  // リダイレクト対応
+      redirect: 'follow',
+      keepalive: true
     });
 
+    console.log(`Thumb proxy fetch status for ${url}: ${response.status}`);
+
     if (!response.ok) {
-      console.error(`Thumb proxy failed: ${response.status} for ${url}`);
-      return res.status(response.status).send(`Proxy error: ${response.status}`);
+      const errorText = await response.text().catch(() => 'No error body');
+      console.error(`Thumb proxy error ${response.status} for ${url}: ${errorText}`);
+      return res.status(response.status).send(`Proxy fetch failed: ${response.status}`);
     }
 
     const headers = {
       "Content-Type": response.headers.get("content-type") || "image/webp",
-      "Cache-Control": "public, max-age=86400",  // キャッシュで高速化
-      "Access-Control-Allow-Origin": "*"
+      "Cache-Control": "public, max-age=604800", // 1週間キャッシュで高速化
+      "Access-Control-Allow-Origin": "*",
+      "Vary": "Origin"
     };
 
     res.writeHead(response.status, headers);
     response.body.pipe(res);
   } catch (err) {
-    console.error("Thumb proxy error:", err.message, url);
-    res.status(500).send("Failed to proxy thumbnail");
+    console.error(`Thumb proxy exception for ${url}:`, err.message);
+    res.status(500).send("Proxy server error");
   }
 });
 
