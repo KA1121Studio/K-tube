@@ -102,36 +102,51 @@ app.get("/proxy", async (req, res) => {
 
 app.get("/thumb-proxy", async (req, res) => {
   const url = req.query.url;
+  if (!url) return res.status(400).send("URL required");
 
-  // 安全のため、許可するオリジンのみを通過させる
-  if (!url || 
-      (!url.includes("yt3.ggpht.com") && 
-       !url.includes("lh3.googleusercontent.com") && 
-       !url.includes("proxy.piped"))) {
-    return res.status(400).send("Invalid thumbnail URL");
-  }
+  // 許可ホスト（private.coffee対応）
+  const allowedHosts = [
+    'yt3.ggpht.com',
+    'ggpht.com',
+    'googleusercontent.com',
+    'pipedproxy',
+    'private.coffee',
+    'kavin.rocks'
+  ];
 
   try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    if (!allowedHosts.some(h => hostname.includes(h))) {
+      return res.status(403).send("Invalid thumbnail host");
+    }
+
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-      }
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.youtube.com/watch?v=dummy-video",  // ← これが大事！YouTubeページ由来に見せる
+        "Origin": "https://www.youtube.com",
+        "Accept": "image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+      },
+      redirect: 'follow'  // リダイレクト対応
     });
 
     if (!response.ok) {
-      throw new Error(`Thumbnail fetch failed: ${response.status}`);
+      console.error(`Thumb proxy failed: ${response.status} for ${url}`);
+      return res.status(response.status).send(`Proxy error: ${response.status}`);
     }
 
     const headers = {
       "Content-Type": response.headers.get("content-type") || "image/webp",
-      "Cache-Control": "public, max-age=86400",  // 1日キャッシュ
-      "Access-Control-Allow-Origin": "*"        // 必要に応じて（CORS対策）
+      "Cache-Control": "public, max-age=86400",  // キャッシュで高速化
+      "Access-Control-Allow-Origin": "*"
     };
 
     res.writeHead(response.status, headers);
     response.body.pipe(res);
   } catch (err) {
-    console.error("Thumb proxy error:", err.message);
+    console.error("Thumb proxy error:", err.message, url);
     res.status(500).send("Failed to proxy thumbnail");
   }
 });
