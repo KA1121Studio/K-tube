@@ -76,7 +76,7 @@ app.get('/yt-desc/:id', async (req, res) => {
 
   try {
     const json = execSync(
-      `yt-dlp -J https://youtu.be/${videoId}`,
+      `yt-dlp --cookies youtube-cookies.txt -J https://youtu.be/${videoId}`,
       { encoding: 'utf8' }
     );
 
@@ -87,10 +87,15 @@ app.get('/yt-desc/:id', async (req, res) => {
     });
 
   } catch (e) {
-    console.error('yt-desc error:', e.message);
-    res.status(500).json({ error: 'yt-dlp failed' });
+    console.error('yt-desc error FULL:', e.message);
+    res.status(500).json({
+      error: e.message,
+      stderr: e.stderr?.toString(),
+      stdout: e.stdout?.toString()
+    });
   }
 });
+
 
 
 // プロキシ（動画チャンク配信用） ← 重要！これがないと403エラー多発
@@ -204,20 +209,9 @@ const pipedInstances = [
   'https://pipedapi.tokhmi.xyz'
 ];
 
-app.get('/piped/*', async (req, res) => {
-  const path = req.path.replace('/piped', '');
-  const query = new URLSearchParams(req.query).toString();
 
-  for (const base of pipedInstances) {
-    const targetUrl = `${base}${path}${query ? '?' + query : ''}`;
-    try {
-      const response = await fetch(targetUrl, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
       
+// streams 専用プロキシ（フロント用・証明書/CORS回避）
 // streams 専用プロキシ（フロント用・証明書/CORS回避）
 app.get('/piped-streams/:id', async (req, res) => {
   const videoId = req.params.id;
@@ -251,13 +245,27 @@ app.get('/piped-streams/:id', async (req, res) => {
 
   res.status(503).json({ error: 'All streams instances failed' });
 });
-   
+
+app.get('/piped/*', async (req, res) => {
+  const path = req.path.replace('/piped', '');
+  const query = new URLSearchParams(req.query).toString();
+
+  for (const base of pipedInstances) {
+    const targetUrl = `${base}${path}${query ? '?' + query : ''}`;
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
 
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         res.setHeader('Content-Type', contentType || 'application/json');
         return response.body.pipe(res);
       }
+
       console.log(`Instance ${base} failed with ${response.status}`);
     } catch (e) {
       console.error(`Instance ${base} error:`, e.message);
@@ -266,6 +274,9 @@ app.get('/piped-streams/:id', async (req, res) => {
 
   res.status(503).json({ error: 'All Piped instances failed' });
 });
+
+
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
