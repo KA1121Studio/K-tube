@@ -325,23 +325,24 @@ async function setupComments(videoId) {
         list.innerHTML = '';
       }
 
-    if (res.comments && res.comments.length > 0) {
+   if (res.comments && res.comments.length > 0) {
   res.comments.forEach(c => {
+    // authorThumbnails の最後（最大サイズ）がベスト
     let thumbUrl = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
 
-    // ★ ここをシンプルに変更 ★
-    // Pipedのproxy URLはそのまま使う（プロキシ経由をスキップ）
-    // 空 or 無効ならデフォルト画像
-    const proxiedThumb = thumbUrl && thumbUrl.startsWith('https://') 
-      ? thumbUrl 
+    // ★ 修正ポイント：Piped proxy URLをそのまま使う ★
+    // 有効なhttps URLならそのまま、それ以外（空など）はデフォルト
+    const proxiedThumb = thumbUrl && thumbUrl.startsWith('https://') && thumbUrl.includes('proxy')
+      ? thumbUrl  // ← これで proxy.piped.private.coffee や pipedproxy-xxx を直利用
       : 'https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';
 
     const div = document.createElement('div');
     div.className = 'comment';
     div.innerHTML = `
-      <img src="${proxiedThumb}" alt=""
+      <img src="${proxiedThumb}" alt="Author thumbnail"
            style="width:40px; height:40px; border-radius:50%; object-fit: cover; flex-shrink:0;"
            loading="lazy"
+           referrerpolicy="no-referrer"  <!-- ← これ追加でReferer制限回避率UP -->
            onerror="this.src='https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png'; this.onerror=null;">
       <div class="c-body">
         <div class="name" style="display:flex; align-items:center; gap:6px; font-size:13px;">
@@ -357,13 +358,10 @@ async function setupComments(videoId) {
     `;
     list.appendChild(div);
   });
+} else if (res.comments && res.comments.length === 0) {
+  // コメント0件時の表示（すでにあったらそのまま）
+  list.innerHTML = '<div style="padding: 20px; text-align: center; color: #606060; font-size:14px;">コメントはありません</div>';
 }
-
-      // コメント0件かつこれ以上ない場合の表示
-      if (list.children.length === 0 && !hasMore) {
-        list.innerHTML = '<div style="padding: 20px; text-align: center; color: #606060; font-size:14px;">コメントは非表示に設定されているか、コメントがありません</div>';
-      }
-
     } catch (e) {
       console.error('コメント読み込みエラー:', e);
       list.innerHTML += `<div style="color:#c00; padding:12px; font-size:14px;">コメントの読み込みに失敗しました</div>`;
