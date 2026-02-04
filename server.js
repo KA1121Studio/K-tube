@@ -70,6 +70,29 @@ app.get("/video", async (req, res) => {
   }
 });
 
+// yt-dlp から説明文取得（最終フォールバック・最強）
+app.get('/yt-desc/:id', async (req, res) => {
+  const videoId = req.params.id;
+
+  try {
+    const json = execSync(
+      `yt-dlp -J https://youtu.be/${videoId}`,
+      { encoding: 'utf8' }
+    );
+
+    const data = JSON.parse(json);
+
+    res.json({
+      description: data.description || ''
+    });
+
+  } catch (e) {
+    console.error('yt-desc error:', e.message);
+    res.status(500).json({ error: 'yt-dlp failed' });
+  }
+});
+
+
 // プロキシ（動画チャンク配信用） ← 重要！これがないと403エラー多発
 app.get("/proxy", async (req, res) => {
   const url = req.query.url;
