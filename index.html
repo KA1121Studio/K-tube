@@ -417,11 +417,27 @@ if (res.comments && res.comments.length > 0) {
             console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
           }
 
+         // 説明文だけ streams API から取得
+let streamsDesc = '';
+
+try {
+  const streamsData = await pipedFetch(`/streams/${videoId}`);
+  streamsDesc = streamsData.description || '';
+} catch (e) {
+  console.warn('説明文取得失敗（streams）:', e);
+  streamsDesc = '';
+}
+
+
           const title       = metaData.title       || `動画（ID: ${videoId}）`;
           const views       = metaData.views       || '---';
           const likes       = '---';
           const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
-          const description = metaData.description || '説明文は現在取得できませんでした';
+          const description =
+  streamsDesc ||
+  metaData.description ||
+  '説明文は現在取得できませんでした';
+
           const chName      = metaData.uploaderName || metaData.uploader || '---';
           const chId        = metaData.uploaderUrl?.split('/').pop() || '';
           const chThumb     = metaData.uploaderAvatar || metaData.thumbnail || '';
