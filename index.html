@@ -402,24 +402,24 @@ if (res.comments && res.comments.length > 0) {
 
         try {
           // メタデータ取得
-　　　　　// ★ 正しい方法：動画IDから直接メタデータ取得
+// メタデータ取得（正規API）
 try {
   metaData = await pipedFetch(`/streams/${videoId}`);
 } catch (e) {
-  console.warn('メタデータ取得失敗（streams）:', e);
+  console.warn('メタデータ取得失敗（Piped streams）:', e);
   metaData = {};
 }
 
-
 const title       = metaData.title || `動画（ID: ${videoId}）`;
 const views       = metaData.views || 0;
-const uploaded    = metaData.uploadDate || metaData.uploaded || '---';
-const description = metaData.description || '説明文は現在取得できませんでした';
+const likes       = metaData.likes || metaData.likeCount || 0;  // ← 追加
+const uploaded    = metaData.uploadDate || metaData.uploadedDate || '';
+const description = metaData.description || '';
+const chName      = metaData.uploader || metaData.uploaderName || '';
+const chId        = metaData.uploaderUrl?.split('/').pop() || '';
+const chThumb     = metaData.uploaderAvatar || '';
+const chSubs      = metaData.subscriberCount || 0;
 
-const chName  = metaData.uploader || '---';
-const chId    = metaData.uploaderId || '';
-const chThumb = metaData.uploaderAvatar || '';
-const chSubs  = metaData.subscriberCount || 0;
 
 
           app.innerHTML = `
