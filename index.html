@@ -417,16 +417,26 @@ if (res.comments && res.comments.length > 0) {
             console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
           }
 
-         // 説明文だけ streams API から取得
+// 説明文だけ streams API から取得（直指定・503回避）
 let streamsDesc = '';
 
 try {
-  const streamsData = await pipedFetch(`/streams/${videoId}`);
-  streamsDesc = streamsData.description || '';
+  const streamsRes = await fetch(
+    'https://api.piped.private.coffee/streams/' + videoId,
+    { headers: { 'Accept': 'application/json' } }
+  );
+  if (streamsRes.ok) {
+    const streamsData = await streamsRes.json();
+    streamsDesc = streamsData.description || '';
+  } else {
+    console.warn('streams直取得 失敗 status:', streamsRes.status);
+    streamsDesc = '';
+  }
 } catch (e) {
-  console.warn('説明文取得失敗（streams）:', e);
+  console.warn('説明文取得失敗（streams直）:', e);
   streamsDesc = '';
 }
+
 
 
           const title       = metaData.title       || `動画（ID: ${videoId}）`;
