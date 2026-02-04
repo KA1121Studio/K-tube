@@ -37,6 +37,17 @@ if (!videoId) {
       videoEl.src = "/proxy?url=" + encodeURIComponent(data.video);
       audioEl.src = "/proxy?url=" + encodeURIComponent(data.audio);
 
+      // ★ 360p のときは URL を保存（再取得しないため）
+if (mode === "360") {
+  try {
+    localStorage.setItem("last360VideoUrl", data.video);
+    console.log("360p URL saved for download");
+  } catch (e) {
+    console.warn("Failed to save 360p URL", e);
+  }
+}
+
+
       // 動画と音声を同期
       videoEl.addEventListener("play", () => audioEl.play());
       videoEl.addEventListener("pause", () => audioEl.pause());
