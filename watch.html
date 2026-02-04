@@ -29,35 +29,46 @@ if (!videoId) {
   fetch(`${api}?id=${videoId}`)
     .then(res => res.json())
     .then(data => {
-      if (!data.video || !data.audio) {
-        alert("動画または音声URLが取得できません");
+      if (!data.video) {
+        alert("動画URLが取得できません");
         return;
       }
 
+      // ★ 共通：video は必ずセット
       videoEl.src = "/proxy?url=" + encodeURIComponent(data.video);
-      audioEl.src = "/proxy?url=" + encodeURIComponent(data.audio);
 
-      // ★ 360p のときは URL を保存（再取得しないため）
-if (mode === "360") {
-  try {
-    localStorage.setItem("last360VideoUrl", data.video);
-    // ★ 親（index.html）に取得完了を通知
-if (window.parent) {
-  window.parent.postMessage("video360-ready", "*");
-}
+      if (mode === "360") {
+        // ===== オリジナルプレイヤー２（360p：1本だけ）=====
+        audioEl.remove();   // 音声タグは不要なので削除
 
-    console.log("360p URL saved for download");
-  } catch (e) {
-    console.warn("Failed to save 360p URL", e);
-  }
-}
+        try {
+          localStorage.setItem("last360VideoUrl", data.video);
 
+          // 親（index.html）に取得完了を通知
+          if (window.parent) {
+            window.parent.postMessage("video360-ready", "*");
+          }
 
-      // 動画と音声を同期
-      videoEl.addEventListener("play", () => audioEl.play());
-      videoEl.addEventListener("pause", () => audioEl.pause());
-      videoEl.addEventListener("seeking", () => audioEl.currentTime = videoEl.currentTime);
-      videoEl.addEventListener("ratechange", () => audioEl.playbackRate = videoEl.playbackRate);
+          console.log("360p URL saved for download");
+        } catch (e) {
+          console.warn("Failed to save 360p URL", e);
+        }
+
+      } else {
+        // ===== オリジナルプレイヤー１（分離：video + audio）=====
+        if (!data.audio) {
+          alert("音声URLが取得できません");
+          return;
+        }
+
+        audioEl.src = "/proxy?url=" + encodeURIComponent(data.audio);
+
+        // 動画と音声を同期（1 のときだけ）
+        videoEl.addEventListener("play", () => audioEl.play());
+        videoEl.addEventListener("pause", () => audioEl.pause());
+        videoEl.addEventListener("seeking", () => audioEl.currentTime = videoEl.currentTime);
+        videoEl.addEventListener("ratechange", () => audioEl.playbackRate = videoEl.playbackRate);
+      }
     })
     .catch(err => {
       console.error(err);
