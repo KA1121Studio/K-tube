@@ -41,6 +41,11 @@ if (!videoId) {
 if (mode === "360") {
   try {
     localStorage.setItem("last360VideoUrl", data.video);
+    // ★ 親（index.html）に取得完了を通知
+if (window.parent) {
+  window.parent.postMessage("video360-ready", "*");
+}
+
     console.log("360p URL saved for download");
   } catch (e) {
     console.warn("Failed to save 360p URL", e);
