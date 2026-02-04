@@ -62,6 +62,11 @@
   .side-col { flex: 0 0 40%; display: flex; flex-direction: column; overflow-y: auto; padding-left: 4px; }
   .player-box { flex: 0 0 auto; }
   .comments { flex: 1 1 auto; overflow-y: auto; }
+.btn-sub.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 </style>
 </head>
 <body>
@@ -498,7 +503,9 @@ if (!streamsDesc) {
                       </div>
                       <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
                     </div>
-                    <div class="btn-sub">登録</div>
+                    <div class="btn-sub disabled" id="downloadMainBtn">ダウンロード</div>
+
+
                   </div>
                   <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
                   <div class="comments" id="commentsArea">
@@ -514,6 +521,36 @@ if (!streamsDesc) {
               </aside>
             </div>
           `;
+// ★ watch.html からの取得完了通知を受け取る
+window.addEventListener("message", (event) => {
+  if (event.data === "video360-ready") {
+    const btn = document.getElementById("downloadMainBtn");
+    if (btn) {
+      btn.classList.remove("disabled");
+      console.log("Download button enabled");
+    }
+  }
+});
+
+         // ★ ダウンロードボタン（360p保存済みURLを使用）
+const downloadBtn = document.getElementById('downloadMainBtn');
+if (downloadBtn) {
+  downloadBtn.addEventListener('click', () => {
+    const url = localStorage.getItem("last360VideoUrl");
+
+
+
+
+    if (!url) {
+      alert("先に『オリジナル2 (360p)』で動画を取得してください");
+      return;
+    }
+
+    // ★ 再取得せずに保存
+    window.location.href = "/download?url=" + encodeURIComponent(url);
+  });
+}
+
 
           // イベント追加
           const watchChLink = app.querySelector('.watch-ch-link');
@@ -602,6 +639,9 @@ if (playerSelect.value === 'official') {
           </div>`;
         }
       }
+
+
+
 
       async function renderChannel(channelId) {
         app.innerHTML = `<div>チャンネル読み込み中…</div>`;
