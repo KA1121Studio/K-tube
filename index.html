@@ -327,7 +327,8 @@ async function setupComments(videoId) {
      
 if (res.comments && res.comments.length > 0) {
   res.comments.forEach(c => {
-    let thumbUrl = c.authorThumbnails?.[c.authorThumbnails.length - 1]?.url || '';
+    let thumbUrl = c.thumbnail || '';
+
     
     // Pipedのproxy URLだけサーバープロキシ経由（他のURLはそのまま）
     const proxiedThumb = thumbUrl && thumbUrl.includes('proxy.piped.private.coffee')
