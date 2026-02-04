@@ -15,8 +15,8 @@
 <audio id="audio" style="display:none"></audio>
 
 <script>
-const mode = params.get("mode") || "default";
 const params = new URLSearchParams(window.location.search);
+const mode = params.get("mode") || "default";
 const videoId = params.get("id");
 const videoEl = document.getElementById("video");
 const audioEl = document.getElementById("audio");
@@ -26,8 +26,7 @@ if (!videoId) {
 } else {
   const api = mode === "360" ? "/video360" : "/video";
 
-fetch(`${api}?id=${videoId}`)
-
+  fetch(`${api}?id=${videoId}`)
     .then(res => res.json())
     .then(data => {
       if (!data.video || !data.audio) {
@@ -37,7 +36,6 @@ fetch(`${api}?id=${videoId}`)
 
       videoEl.src = "/proxy?url=" + encodeURIComponent(data.video);
       audioEl.src = "/proxy?url=" + encodeURIComponent(data.audio);
-
 
       // 動画と音声を同期
       videoEl.addEventListener("play", () => audioEl.play());
