@@ -70,13 +70,12 @@ app.get("/video", async (req, res) => {
   }
 });
 
-// yt-dlp から説明文取得（最終フォールバック・最強）
 app.get('/yt-desc/:id', async (req, res) => {
   const videoId = req.params.id;
 
   try {
     const json = execSync(
-      `yt-dlp --cookies youtube-cookies.txt -J https://youtu.be/${videoId}`,
+      `yt-dlp --cookies youtube-cookies.txt --user-agent "Mozilla/5.0" -J https://youtu.be/${videoId}`,
       { encoding: 'utf8' }
     );
 
@@ -87,7 +86,7 @@ app.get('/yt-desc/:id', async (req, res) => {
     });
 
   } catch (e) {
-    console.error('yt-desc error FULL:', e.message);
+    console.error('yt-desc error FULL:', e);
     res.status(500).json({
       error: e.message,
       stderr: e.stderr?.toString(),
