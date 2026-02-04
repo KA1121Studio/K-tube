@@ -402,25 +402,30 @@ if (res.comments && res.comments.length > 0) {
 
         try {
           // メタデータ取得
-// メタデータ取得（正規API）
-try {
-  metaData = await pipedFetch(`/streams/${videoId}`);
-} catch (e) {
-  console.warn('メタデータ取得失敗（Piped streams）:', e);
-  metaData = {};
-}
+          try {
+            searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
+            let items = [];
+            if (Array.isArray(searchData)) {
+              items = searchData;
+            } else if (searchData && typeof searchData === 'object') {
+              items = searchData.items || searchData.results || searchData.videos || [];
+            }
+            metaData = items.find(item =>
+              item.url?.includes(videoId) || item.url?.includes(`v=${videoId}`)
+            ) || {};
+          } catch (searchErr) {
+            console.warn('メタデータ取得失敗（Piped検索）:', searchErr);
+          }
 
-const title       = metaData.title || `動画（ID: ${videoId}）`;
-const views       = metaData.views || 0;
-const likes       = metaData.likes || metaData.likeCount || 0;  // ← 追加
-const uploaded    = metaData.uploadDate || metaData.uploadedDate || '';
-const description = metaData.description || '';
-const chName      = metaData.uploader || metaData.uploaderName || '';
-const chId        = metaData.uploaderUrl?.split('/').pop() || '';
-const chThumb     = metaData.uploaderAvatar || '';
-const chSubs      = metaData.subscriberCount || 0;
-
-
+          const title       = metaData.title       || `動画（ID: ${videoId}）`;
+          const views       = metaData.views       || '---';
+          const likes       = '---';
+          const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
+          const description = metaData.description || '説明文は現在取得できませんでした';
+          const chName      = metaData.uploaderName || metaData.uploader || '---';
+          const chId        = metaData.uploaderUrl?.split('/').pop() || '';
+          const chThumb     = metaData.uploaderAvatar || metaData.thumbnail || '';
+          const chSubs      = metaData.uploaderSubscriberCount || 0;
 
           app.innerHTML = `
             <div class="watch-container">
