@@ -331,7 +331,7 @@ if (res.comments && res.comments.length > 0) {
     
     // thumbUrlが有効ならサーバープロキシ経由、それ以外デフォルト
     const proxiedThumb = thumbUrl && thumbUrl.startsWith('https://proxy.piped.')
-      ? `/thumb-proxy?url=${encodeURIComponent(thumbUrl)}`
+      ? `/thumb-proxy?url=${encodeURIComponent(thumbUrl)}&videoId=${videoId}`
       : 'https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';
 
     const div = document.createElement('div');
