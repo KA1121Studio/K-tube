@@ -418,15 +418,20 @@ if (res.comments && res.comments.length > 0) {
           }
 
 
-// 説明文だけ streams API から取得（複数インスタンスでリトライ）
-// 説明文だけ streams API から取得（server経由）
+// 説明文だけ streams API から取得（server経由・正解版）
 let streamsDesc = '';
 
 try {
-  const streamsData = await pipedFetch(`/piped-streams/${videoId}`);
-  streamsDesc = streamsData.description || '';
+  const streamsRes = await fetch(`/piped-streams/${videoId}`);
+  if (streamsRes.ok) {
+    const streamsData = await streamsRes.json();
+    streamsDesc = streamsData.description || '';
+  } else {
+    console.warn('piped-streams status:', streamsRes.status);
+    streamsDesc = '';
+  }
 } catch (e) {
-  console.warn('説明文取得失敗（piped-streams）:', e);
+  console.warn('説明文取得失敗（piped-streams fetch）:', e);
   streamsDesc = '';
 }
 
