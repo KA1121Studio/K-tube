@@ -356,19 +356,11 @@ if (res.comments && res.comments.length > 0) {
             ${timeAgo(c.commentedTime || '')}
           </span>
         </div>
-<div class="text" style="margin-top:4px; line-height:1.4; font-size:14px; white-space: pre-wrap; word-break: break-word; color:#0f0f0f;">
-  ${escapeHtml(c.commentText || '(内容がありません)')
-    // ① &lt;br&gt; を <br> に戻す
-    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
-    // ② \r\n や \n を <br> に統一
-    .replace(/\r?\n/g, '<br>')
-    // ③ 先頭の <br>・空白・全角スペースを全部削除（超重要）
-    .replace(/^(?:\s|　|<br>)+/gi, '')
-  }
-</div>
-
-
-
+<div class="text" style="margin-top:4px; line-height:1.4; font-size:14px; white-space: pre-wrap; word-break: break-word; color:#0f0f0f;">${escapeHtml(c.commentText || '(内容がありません)')
+  .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+  .replace(/\r?\n/g, '<br>')
+  .replace(/^(?:\s|　|<br>)+/gi, '')
+}</div>
 
       </div>
     `;
