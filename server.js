@@ -187,34 +187,6 @@ app.get("/thumb-proxy", async (req, res) => {
   }
 });
 
-app.get('/piped-streams/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    const r = await fetch(`https://piped.video/api/v1/streams/${id}`);
-    if (!r.ok) return res.status(500).json({});
-    const data = await r.json();
-    res.json({ description: data.description || '' });
-  } catch (e) {
-    res.status(500).json({});
-  }
-});
-
-app.get('/yt-desc/:id', async (req, res) => {
-  const { exec } = require('child_process');
-  const id = req.params.id;
-
-  exec(`yt-dlp --dump-json https://www.youtube.com/watch?v=${id}`, (err, stdout) => {
-    if (err) return res.status(500).json({});
-    try {
-      const data = JSON.parse(stdout);
-      res.json({ description: data.description || '' });
-    } catch {
-      res.status(500).json({});
-    }
-  });
-});
-
-
 // HLS用プロキシ（必要なら拡張）
 app.get("/proxy-hls", async (req, res) => {
   const url = req.query.url;
