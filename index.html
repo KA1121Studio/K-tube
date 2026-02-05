@@ -357,10 +357,17 @@ if (res.comments && res.comments.length > 0) {
           </span>
         </div>
 <div class="text" style="margin-top:4px; line-height:1.4; font-size:14px; white-space: pre-wrap; word-break: break-word; color:#0f0f0f;">
-  ${escapeHtml(c.commentText?.trim() || '(内容がありません)')
+  ${escapeHtml(c.commentText || '(内容がありません)')
+    // 先頭の改行・<br>・空白を削除
+    .replace(/^\s*(&lt;br\s*\/?&gt;\s*)+/gi, '')
+    .replace(/^\s*\n+/, '')
+    // &lt;br&gt; を <br> に戻す
     .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
-    .replace(/\n/g, '<br>')}
+    // \n を <br> に変換
+    .replace(/\n/g, '<br>')
+  }
 </div>
+
 
 
       </div>
