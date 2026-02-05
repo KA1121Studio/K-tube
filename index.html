@@ -397,7 +397,7 @@ if (res.comments && res.comments.length > 0) {
 }
      
       // 動画再生画面
-      async function renderWatch(videoId) {
+async function renderWatch(videoId) {
         observerMap.forEach(o => o.disconnect());
         observerMap.clear();
         app.innerHTML = `<div>読み込み中...</div>`;
@@ -461,10 +461,15 @@ if (!streamsDesc) {
           const views       = metaData.views       || '---';
           const likes       = '---';
           const uploaded    = metaData.uploadedDate || metaData.uploaded || '---';
+
           const description =
-  streamsDesc ||
-  metaData.description ||
-  '説明文は現在取得できませんでした';
+            streamsDesc ||
+            metaData.description ||
+            '説明文は現在取得できませんでした';
+
+          // ★ ここだけ安定化（必ず string）
+          const safeDescription = String(description || '');
+          const escapedDesc = escapeHtml(safeDescription);
 
           const chName      = metaData.uploaderName || metaData.uploader || '---';
           const chId        = metaData.uploaderUrl?.split('/').pop() || '';
@@ -504,10 +509,13 @@ if (!streamsDesc) {
                       <div style="color:#606060;font-size:13px">${fmtNum(chSubs)} 人の登録者</div>
                     </div>
                     <div class="btn-sub disabled" id="downloadMainBtn">ダウンロード</div>
-
-
                   </div>
-                  <div style="margin-top:12px;color:#333">${escapeHtml(description).slice(0,600)}${description.length>600 ? '…' : ''}</div>
+
+                  <!-- ★ 説明文（ここだけ修正） -->
+                  <div style="margin-top:12px;color:#333">
+                    ${escapedDesc.slice(0,600)}${escapedDesc.length > 600 ? '…' : ''}
+                  </div>
+
                   <div class="comments" id="commentsArea">
                     <h3 style="margin-top:12px">コメント</h3>
                     <div id="commentsList"></div>
@@ -521,7 +529,7 @@ if (!streamsDesc) {
               </aside>
             </div>
           `;
-// ★ watch.html からの取得完了通知を受け取る
+
 window.addEventListener("message", (event) => {
   if (event.data === "video360-ready") {
     const btn = document.getElementById("downloadMainBtn");
@@ -532,51 +540,39 @@ window.addEventListener("message", (event) => {
   }
 });
 
-         // ★ ダウンロードボタン（360p保存済みURLを使用）
 const downloadBtn = document.getElementById('downloadMainBtn');
 if (downloadBtn) {
   downloadBtn.addEventListener('click', () => {
     const url = localStorage.getItem("last360VideoUrl");
-
-
-
-
     if (!url) {
       alert("先に『オリジナル2 (360p)』で動画を取得してください");
       return;
     }
-
-    // ★ 再取得せずに保存
     window.location.href = "/download?url=" + encodeURIComponent(url);
   });
 }
 
+const watchChLink = app.querySelector('.watch-ch-link');
+if (watchChLink) {
+  watchChLink.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (chId) location.hash = `channel=${chId}`;
+  });
+}
 
-          // イベント追加
-          const watchChLink = app.querySelector('.watch-ch-link');
-          if (watchChLink) {
-            watchChLink.addEventListener('click', e => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (chId) location.hash = `channel=${chId}`;
-            });
-          }
+const commentsArea = document.getElementById('commentsArea');
+if (commentsArea) {
+  setupComments(videoId);
+}
 
-          // コメント読み込み
-          const commentsArea = document.getElementById('commentsArea');
-          if (commentsArea) {
-            setupComments(videoId);
-          }
-
-          // 関連動画
-// renderWatch 内の関連動画部分を置き換え
+// 関連動画（そのまま）
 const relatedList = document.getElementById('relatedList');
 if (relatedList) {
   relatedList.innerHTML = '<div>読み込み中...</div>';
 
   try {
-    // 関連動画の代用: 動画タイトルで検索（metaData.title があれば使う）
-    const searchQuery = metaData.title || videoId; // タイトルが取れなければIDで
+    const searchQuery = metaData.title || videoId;
     const relatedData = await pipedFetch('/search', { q: searchQuery, filter: 'videos' });
 
     let items = [];
@@ -588,7 +584,6 @@ if (relatedList) {
 
     if (items.length > 1) {
       relatedList.innerHTML = '';
-      // 上位6件を関連として表示（現在の動画を除外）
       items.slice(0, 6).forEach(item => {
         const relVid = item.url?.split('v=')[1] || '';
         if (relVid && relVid !== videoId) {
@@ -614,21 +609,19 @@ if (relatedList) {
   }
 }
 
-          // playerSelect
-          const playerSelect = document.getElementById('playerSelect');
-          const iframe = document.getElementById('videoIframe');
-          if (playerSelect && iframe) {
-            playerSelect.addEventListener('change', () => {
-if (playerSelect.value === 'official') {
-  iframe.src = `https://www.youtube.com/embed/${videoId}`;
-} else if (playerSelect.value === 'original360') {
-  iframe.src = `/watch.html?id=${videoId}&mode=360`;
-} else {
-  iframe.src = `/watch.html?id=${videoId}`;
+const playerSelect = document.getElementById('playerSelect');
+const iframe = document.getElementById('videoIframe');
+if (playerSelect && iframe) {
+  playerSelect.addEventListener('change', () => {
+    if (playerSelect.value === 'official') {
+      iframe.src = `https://www.youtube.com/embed/${videoId}`;
+    } else if (playerSelect.value === 'original360') {
+      iframe.src = `/watch.html?id=${videoId}&mode=360`;
+    } else {
+      iframe.src = `/watch.html?id=${videoId}`;
+    }
+  });
 }
-
-            });
-          }
 
         } catch (e) {
           console.error('renderWatch error:', e);
@@ -639,6 +632,7 @@ if (playerSelect.value === 'official') {
           </div>`;
         }
       }
+
 
 
 
